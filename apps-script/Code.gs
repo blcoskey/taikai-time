@@ -22,21 +22,59 @@ function shiaiMark(v) {
 }
 
 // Pool round robin order. Red is listed first. Small pools use the usual fixed orders.
+// Pool fight order, built to save tasuki (ribbon) changes: as often as possible the next fight
+// keeps one fighter from the fight before, in the same colour, so only one fighter changes over.
+// Nobody fights more than SHIAI_MAX_IN_A_ROW fights in a row, and runs of 3 are avoided when a
+// run of 2 does the job. Colours then follow each fighter's last colour where they are free.
+// Returns [[red, white], ...] using 1-based positions in the pool.
+var SHIAI_MAX_IN_A_ROW = 3;
 function shiaiRoundRobin(n) {
   if (n < 2) return [];
-  if (n === 2) return [[1, 2]];
-  if (n === 3) return [[1, 2], [2, 3], [3, 1]];
-  if (n === 4) return [[1, 2], [3, 4], [1, 3], [2, 4], [1, 4], [2, 3]];
-  var ids = []; for (var i = 1; i <= n; i++) ids.push(i);
-  if (n % 2) ids.push(0);
-  var m = ids.length, out = [];
-  for (var r = 0; r < m - 1; r++) {
-    for (var j = 0; j < m / 2; j++) {
-      var a = ids[j], b = ids[m - 1 - j];
-      if (a && b) out.push(r % 2 ? [b, a] : [a, b]);
+  var pairs = [];
+  for (var i = 1; i <= n; i++) for (var j = i + 1; j <= n; j++) pairs.push([i, j]);
+  var m = pairs.length, used = [], seq = [], best = null, bestShare = -1, bestLong = 1e9, budget = 40000;
+  var has = function (p, x) { return p[0] === x || p[1] === x; };
+  var runOf = function (x) { var k = 0; for (var i = seq.length - 1; i >= 0 && has(pairs[seq[i]], x); i--) k++; return k; };
+  function dfs(share, long) {
+    if (seq.length === m) {
+      if (share > bestShare || (share === bestShare && long < bestLong)) { best = seq.slice(); bestShare = share; bestLong = long; }
+      return;
     }
-    ids.splice(1, 0, ids.pop());
+    var left = seq.length ? m - seq.length : m - 1;
+    if (share + left < bestShare || (share + left === bestShare && long >= bestLong)) return;
+    if (bestShare === m - 1 && bestLong === 0) return;
+    if (--budget < 0) return;
+    var last = seq.length ? pairs[seq[seq.length - 1]] : null;
+    var order = [];
+    for (var c = 0; c < m; c++) if (!used[c]) order.push(c);
+    // Try fights that keep a fighter on first.
+    order.sort(function (x, y) { return (last && (has(pairs[y], last[0]) || has(pairs[y], last[1])) ? 1 : 0) - (last && (has(pairs[x], last[0]) || has(pairs[x], last[1])) ? 1 : 0) || x - y; });
+    for (var k = 0; k < order.length; k++) {
+      var c2 = order[k], p = pairs[c2];
+      var r0 = runOf(p[0]) + 1, r1 = runOf(p[1]) + 1;
+      if (r0 > SHIAI_MAX_IN_A_ROW || r1 > SHIAI_MAX_IN_A_ROW) continue;
+      var shares = last && (has(p, last[0]) || has(p, last[1])) ? 1 : 0;
+      used[c2] = true; seq.push(c2);
+      dfs(share + shares, long + (r0 === 3 ? 1 : 0) + (r1 === 3 ? 1 : 0));
+      seq.pop(); used[c2] = false;
+    }
   }
+  dfs(0, 0);
+  if (!best) best = pairs.map(function (_, i) { return i; });
+  // Colours: a fighter who stays on keeps their colour; otherwise follow each fighter's last colour.
+  var colour = {}, out = [];
+  best.forEach(function (c, i) {
+    var a = pairs[c][0], b = pairs[c][1], prev = i ? out[i - 1] : null, flip;
+    if (prev && (a === prev[0] || b === prev[1])) flip = false;
+    else if (prev && (a === prev[1] || b === prev[0])) flip = true;
+    else {
+      var cost = function (red, white) { return (colour[red] === 'w' ? 1 : 0) + (colour[white] === 'r' ? 1 : 0); };
+      flip = cost(b, a) < cost(a, b);
+    }
+    var f = flip ? [b, a] : [a, b];
+    colour[f[0]] = 'r'; colour[f[1]] = 'w';
+    out.push(f);
+  });
   return out;
 }
 
@@ -424,7 +462,8 @@ function shiaiCompute(raw) {
     var tiedNames = complete ? rows.filter(function (r) { return r.tied; }).map(function (r) { return r.name; }) : [];
     return {
       pool: p, complete: complete, played: main.filter(function (f) { return outcome(f); }).length, total: main.length,
-      playoffNeeded: complete && tiedNames.length > 0, tiedNames: tiedNames,
+      // Not while play-off fights for this pool are still to be fought: they may settle it.
+      playoffNeeded: complete && tiedNames.length > 0 && !pf.some(function (f) { return f.playoff && !outcome(f); }), tiedNames: tiedNames,
       rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought, w: r.w, d: r.d, l: r.l, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
     };
   });
