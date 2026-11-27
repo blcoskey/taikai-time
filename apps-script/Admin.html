@@ -1087,15 +1087,37 @@ function renderEntries() {
   const others = all.filter(r => r[0] !== S.comp);
   const rows = mine.map(x => x.r);
   const body = el('tbody');
+  // Team members are picked from the fighters entered in the individual competitions.
+  const indiv = S.data.comps.filter(x => x.settings.type !== 'team').map(x => x.name).reverse(); // older age group first
+  const pool = all.filter(r => indiv.includes(r[0]) && String(r[1]).trim());
+  const others1 = indiv.filter(n => n !== S.comp);
+  const inp = (r, i, label, style, upper) => el('input', { class: 'cell', value: r[i], 'aria-label': label, style, oninput: e => { r[i] = upper ? e.target.value.toUpperCase() : e.target.value; dirty(); } });
   const draw = () => {
-    body.replaceChildren(...rows.map((r, k) => el('tr', {},
-      el('td', {}, el('input', { class: 'cell', value: r[1], 'aria-label': 'Name', oninput: e => { r[1] = e.target.value; dirty(); } })),
-      el('td', {}, el('input', { class: 'cell', value: r[2], 'aria-label': 'Dojo', oninput: e => { r[2] = e.target.value; dirty(); } })),
-      el('td', {}, el('input', { class: 'cell', value: r[6], 'aria-label': 'Age', style: 'width:56px', oninput: e => { r[6] = e.target.value; dirty(); } })),
-      team ? el('td', {}, el('input', { class: 'cell', value: r[5], 'aria-label': 'Team', oninput: e => { r[5] = e.target.value; dirty(); } })) : null,
-      el('td', {}, el('input', { class: 'cell', value: r[4], 'aria-label': 'Pool', style: 'width:50px', oninput: e => { r[4] = e.target.value.toUpperCase(); dirty(); } })),
-      el('td', {}, el('select', { class: 'cell', 'aria-label': 'Competition', onchange: e => { r[0] = e.target.value; r[4] = ''; dirty(); } }, names.map(n => el('option', Object.assign({ value: n }, n === r[0] ? { selected: true } : {}), n)))),
-      el('td', {}, el('button', { class: 'btn danger', onclick: () => { rows.splice(k, 1); dirty(); draw(); } }, 'Remove')))));
+    body.replaceChildren(...rows.map((r, k) => {
+      if (team) {
+        const taken = rows.filter((x, j) => j !== k).map(x => x[1]);
+        const pick = el('select', { class: 'cell', 'aria-label': 'Fighter', onchange: e => {
+          const src = pool.find(x => x[1] === e.target.value);
+          r[1] = e.target.value; r[2] = src ? src[2] : ''; r[6] = src ? src[6] : ''; dirty(); draw();
+        } }, el('option', { value: '' }, 'Pick fighter'),
+          (r[1] && !pool.some(x => x[1] === r[1])) ? el('option', { value: r[1], selected: true }, r[1]) : null,
+          indiv.map(cn => el('optgroup', { label: cn }, pool.filter(x => x[0] === cn && (x[1] === r[1] || !taken.includes(x[1])))
+            .map(x => el('option', Object.assign({ value: x[1] }, x[1] === r[1] ? { selected: true } : {}), x[1] + (x[2] ? ' (' + x[2] + ')' : ''))))));
+        return el('tr', {},
+          el('td', {}, pick),
+          el('td', {}, inp(r, 5, 'Team')),
+          el('td', {}, inp(r, 4, 'Pool', 'width:50px', true)),
+          el('td', {}, el('button', { class: 'btn danger', onclick: () => { rows.splice(k, 1); dirty(); draw(); } }, 'Remove')));
+      }
+      return el('tr', {},
+        el('td', {}, inp(r, 1, 'Name')),
+        el('td', {}, inp(r, 2, 'Dojo')),
+        el('td', {}, inp(r, 6, 'Age', 'width:56px')),
+        el('td', {}, inp(r, 4, 'Pool', 'width:50px', true)),
+        el('td', { style: 'white-space:nowrap' },
+          others1.map(o => el('button', { class: 'btn', title: 'Moves to ' + o + ' when you save', onclick: () => { r[0] = o; r[4] = ''; rows.splice(k, 1); others.push(r); dirty(); draw(); toast(r[1] + ' moves to ' + o + ' when you save. Redo both draws after.'); } }, 'Move to ' + o)),
+          el('button', { class: 'btn danger', onclick: () => { rows.splice(k, 1); dirty(); draw(); } }, 'Remove')));
+    }));
   };
   draw();
   const save = async () => {
@@ -1110,9 +1132,9 @@ function renderEntries() {
   };
   return el('div', {},
     el('h2', {}, S.comp + ' entries'),
-    el('p', { class: 'note' }, team ? 'One row per fighter. Fighters with the same Team name make a team, fighting in the order listed. Set the number of bouts on the Settings tab.' : 'To move someone to another competition, change it here and redo both draws. Leave Pool blank and the draw sets it, keeping clubmates apart. Clear the pools to redraw from scratch.'),
+    el('p', { class: 'note' }, team ? 'Pick each fighter from the individual competitions and give them a team name. Fighters with the same team name make a team, fighting in the order listed. Set the number of bouts on the Settings tab.' : 'To move someone to another competition, use Move, save, and redo both draws. Leave Pool blank and the draw sets it, keeping clubmates apart. Clear the pools to redraw from scratch.'),
     el('div', { class: 'card' }, el('table', {},
-      el('thead', {}, el('tr', {}, ['Name', 'Dojo', 'Age', team ? 'Team' : null, 'Pool', 'Competition', ''].filter(x => x !== null).map(h => el('th', {}, h)))), body),
+      el('thead', {}, el('tr', {}, (team ? ['Fighter', 'Team', 'Pool', ''] : ['Name', 'Dojo', 'Age', 'Pool', '']).map(h => el('th', {}, h)))), body),
       el('div', { class: 'row', style: 'margin-top:10px' },
         el('button', { class: 'btn', onclick: () => { rows.push([S.comp, '', '', '', '', '', '']); dirty(); draw(); body.querySelector('tr:last-child input')?.focus(); } }, 'Add ' + (team ? 'fighter' : 'entry')),
         el('button', { class: 'btn', onclick: () => { rows.forEach(r => { r[4] = ''; }); dirty(); draw(); } }, 'Clear pools'),
