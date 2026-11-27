@@ -699,6 +699,7 @@ function onOpen() {
   var draw = ui.createMenu('Generate draw');
   var comps = [];
   try { comps = readComps_(); } catch (e) {}
+  orderTabs_();
   comps.slice(0, MAX_COMPS).forEach(function (c, i) { draw.addItem(c.name, 'drawComp' + (i + 1)); });
   if (!comps.length) draw.addItem('Add competitions on the Competitions tab first', 'setupSheets');
   ui.createMenu('Shiai')
@@ -733,6 +734,23 @@ function formatAllMenu() { readComps_().forEach(function (c) { var sh = sheet_(f
 
 function sheet_(name) { return SpreadsheetApp.getActive().getSheetByName(name); }
 function fightsTab_(c) { return c.name + ' Fights'; }
+// Keeps each competition's Fights and Standings tabs in the same order as the Competitions tab
+// (Kids, Teams, Juniors). Does nothing when they are already in order.
+function orderTabs_() {
+  try {
+    var ss = SpreadsheetApp.getActive();
+    if (typeof ss.moveActiveSheet !== 'function') return;
+    var want = [];
+    readComps_().forEach(function (c) { [fightsTab_(c), standingsTab_(c)].forEach(function (n) { var t = ss.getSheetByName(n); if (t) want.push(t); }); });
+    if (want.length < 2) return;
+    var idx = want.map(function (t) { return t.getIndex(); });
+    var slots = idx.slice().sort(function (a, b) { return a - b; });
+    if (idx.every(function (v, i) { return v === slots[i]; })) return;
+    var active = ss.getActiveSheet();
+    want.forEach(function (t, i) { ss.setActiveSheet(t); ss.moveActiveSheet(slots[i]); });
+    if (active) ss.setActiveSheet(active);
+  } catch (e) {}
+}
 function standingsTab_(c) { return c.name + ' Standings'; }
 
 function makeTab_(name, headers, widths) {
@@ -767,6 +785,7 @@ function setupSheets_() {
     formatFights_(sh, comp);
   });
   timingRows_();
+  orderTabs_();
 }
 
 // Adds the timing settings and the time estimate rows to the Competitions tab if they are missing,
