@@ -214,7 +214,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js?v=1795806746"></script>
+<script src="config.js?v=1795806940"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -994,7 +994,9 @@ function render() {
   if (S.tab === 'ko' && !d.fights.some(f => f.ko)) S.tab = 'fights';
   updateJump();
   const content = S.tab === 'pools' ? renderPools() : S.tab === 'ko' ? renderLadder() : renderFights();
-  view.replaceChildren(content);
+  // Once the competition has a result, it sits at the top of every tab.
+  const res = resultsCard();
+  view.replaceChildren(...(res ? [el('h2', { class: 'sec' }, d.name + ' results'), res] : []), content);
   document.getElementById('sync').textContent = S.lastSync ? new Date(S.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   const done = d.fights.filter(f => f.done).length;
   document.getElementById('foot').textContent = d.name + ': ' + done + ' of ' + d.fights.length + (d.type === 'team' ? ' matches' : ' fights') + ' done · updates every ' + Math.round(POLL_MS / 1000) + ' seconds';
@@ -1152,8 +1154,10 @@ function renderPools() {
 function resultsCard() {
   const d = S.data, r = d.results;
   if (!r) return null;
-  const dojo = n => { const f = d.fighters.find(x => norm(x.name) === norm(n)); return f ? f.dojo : ''; };
-  const pod = (medal, n, cls) => el('div', { class: 'pod ' + (cls || '') }, el('span', { class: 'medal' }, medal), el('div', {}, el('div', { class: 'nm' }, n), dojo(n) ? el('div', { class: 'dj' }, dojo(n)) : null));
+  const who = n => d.fighters.find(x => norm(x.name) === norm(n));
+  // Teams show their members under the team name; fighters show their dojo.
+  const sub = n => { const f = who(n); return !f ? '' : f.members && f.members.length ? f.members.join(', ') : f.dojo || ''; };
+  const pod = (medal, n, cls) => el('div', { class: 'pod ' + (cls || '') }, el('span', { class: 'medal' }, medal), el('div', {}, el('div', { class: 'nm' }, n), sub(n) ? el('div', { class: 'dj' }, sub(n)) : null));
   return el('div', { class: 'card' },
     el('div', { class: 'podium' },
       pod('🥇', r.first, 'gold'), pod('🥈', r.second), r.thirds.map(t => pod('🥉', t)),
@@ -1183,8 +1187,6 @@ function ladderNode(f, byCode) {
 function renderLadder() {
   const d = S.data;
   const out = [];
-  const res = resultsCard();
-  if (res) { out.push(el('h2', { class: 'sec' }, 'Results')); out.push(res); }
   const ko = d.fights.filter(f => f.ko);
   const byCode = {}; ko.forEach(f => { byCode[f.code] = f; });
   const fed = new Set(); ko.forEach(f => ['red', 'white'].forEach(s => { if (/^W:/i.test(f[s].from || '')) fed.add(f[s].from.slice(2).toUpperCase()); }));
