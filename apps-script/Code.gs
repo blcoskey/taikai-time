@@ -1452,7 +1452,9 @@ function adminSaveSpirit(compName, votes) {
   return finish_();
 }
 // values: { 'Setting label': value } for one competition column
-function adminSaveSettings(compName, values) {
+// redraw: 'pools' clears this competition's pools and makes a new draw, 'draw' makes a new draw
+// keeping the pools, '' just saves.
+function adminSaveSettings(compName, values, redraw) {
   var sh = sheet_(TAB.comps);
   var v = sh.getDataRange().getValues();
   var h = -1;
@@ -1463,8 +1465,19 @@ function adminSaveSettings(compName, values) {
     for (var i = h + 1; i < v.length; i++) if (String(v[i][0]).trim() === label) sh.getRange(i + 1, col).setValue(values[label]);
   });
   timingRows_();
-  readComps_().forEach(refreshComp_);
+  if (redraw) {
+    var comp = compByName_(compName);
+    if (redraw === 'pools') clearPools_(comp);
+    doDraw_(comp);
+  } else readComps_().forEach(refreshComp_);
   return finish_();
+}
+// Blanks the Pool column on the Entries tab for one competition, so the next draw makes fresh pools.
+function clearPools_(comp) {
+  var sh = sheet_(TAB.entries);
+  var rows = readEntryRowsNow_();
+  if (!rows.length) return;
+  sh.getRange(2, 5, rows.length, 1).setValues(rows.map(function (r) { return [shiaiKey(r[0]) === shiaiKey(comp.name) ? '' : r[4]]; }));
 }
 
 /* ===================== PUBLIC BOARD =====================

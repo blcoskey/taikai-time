@@ -1176,6 +1176,7 @@ function renderSpirit() {
 }
 
 /* ----- Settings tab ----- */
+const DRAW_SETTINGS = ['Pool size', 'Qualify per pool', 'Courts (shiaijo)', 'Bouts per team match'];
 const EDITABLE = [
   ['Bouts per team match', 'number', 'Team events. A daihyosen is added after these.', 'team'],
   ['Pool size', 'number', 'Used when the draw makes the pools.'],
@@ -1216,6 +1217,22 @@ function renderSettings() {
   const c = compDef();
   const team = c.settings.type === 'team';
   const vals = {};
+  // Changing these changes the fights, so saving them makes a new draw (pool size also makes new pools).
+  const saveSettings = async () => {
+    const changed = DRAW_SETTINGS.filter(l => l in vals && String(vals[l]).trim() !== String(c.setting[l] == null ? '' : c.setting[l]).trim());
+    let redraw = '';
+    if (changed.length && c.raw.fights.length) {
+      const scored = computed().fights.some(f => f.done || f.red.marks.length || f.white.marks.length);
+      const what = changed.includes('Pool size') ? 'new pools and a new draw' : 'a new draw';
+      if (!confirm('Changing ' + changed.join(' and ') + ' gives ' + S.comp + ' ' + what + '.' + (scored ? ' Every ' + S.comp + ' score so far will be lost.' : '') + ' Continue?')) return;
+      redraw = changed.includes('Pool size') ? 'pools' : 'draw';
+    }
+    try {
+      const r = await run('adminSaveSettings', S.comp, vals, redraw);
+      document.getElementById('view').dataset.dirty = ''; setData(r);
+      toast(redraw === 'pools' ? 'Saved. ' + S.comp + ' has new pools and fights.' : redraw ? 'Saved. ' + S.comp + ' has a new draw.' : 'Settings saved.');
+    } catch (e) {}
+  };
   const form = el('div', { class: 'form' }, EDITABLE.filter(e => !e[3] || team).map(([label, type, help]) => {
     const cur = c.setting[label] == null ? '' : String(c.setting[label]);
     vals[label] = cur;
@@ -1228,7 +1245,7 @@ function renderSettings() {
     el('h2', {}, S.comp + ' settings'),
     el('div', { class: 'card' }, form,
       el('div', { class: 'row', style: 'margin-top:12px' },
-        el('button', { class: 'btn primary', onclick: async () => { try { const r = await run('adminSaveSettings', S.comp, vals); document.getElementById('view').dataset.dirty = ''; setData(r); toast('Settings saved. Redo the draw if you changed pools or team size.'); } catch (e) {} } }, 'Save settings'))),
+        el('button', { class: 'btn primary', onclick: saveSettings }, 'Save settings'))),
     el('p', { class: 'note' }, 'Points (3 win, 2 draw, 1 per ippon) and the rest live on the Competitions tab of the sheet.'),
     renderReset(),
     typeof demoServer !== 'undefined' ? el('div', { class: 'card row', style: 'margin-top:12px' }, el('span', { class: 'note', style: 'flex:1' }, 'Demo only: start again from the fresh draw.'), el('button', { class: 'btn danger', onclick: async () => { demoServer.reset(); await load(); toast('Demo reset.'); } }, 'Reset demo')) : null);
