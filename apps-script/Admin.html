@@ -90,12 +90,12 @@
   .side select { width: 100%; padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); font-weight: 700; }
   .marks { display: flex; gap: 6px; min-height: 40px; margin: 10px 0; align-items: center; flex-wrap: wrap; }
   .mk { min-width: 36px; height: 36px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; background: var(--card); border: 1px solid var(--line); }
-  .mk.hs { color: var(--warn); }
+  .mk.hs { background: #b45f06 !important; color: #ffffff !important; }
   .ipp { margin-left: auto; font-size: 32px; font-weight: 900; font-variant-numeric: tabular-nums; }
   .keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .key { height: 48px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-weight: 900; font-size: 19px; }
   .key:active { transform: translateY(1px); }
-  .key.hs { color: var(--warn); }
+  .key.hs { background: #b45f06; color: #ffffff; border-color: #b45f06; }
   .side .row { margin-top: 8px; justify-content: space-between; }
   .toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; }
   .toggle input { width: 18px; height: 18px; }
@@ -1105,8 +1105,8 @@ function sideBox(side, label, sub, marks, ippon, rawF, opts) {
   return el('div', { class: 'side ' + side },
     opts.nameSelect || el('div', { class: 'who' + (opts.pending ? ' pending' : '') }, label),
     sub ? el('div', { class: 'dj' }, sub) : null,
-    el('div', { class: 'marks' }, shown.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : '') }, m)), el('span', { class: 'ipp', 'aria-label': ippon + ' ippon' }, ippon)),
-    el('div', { class: 'keys' }, ['M', 'K', 'D', 'T', '∆'].map(m => el('button', { class: 'key' + (m === '∆' ? ' hs' : ''), disabled: opts.locked, title: { M: 'Men', K: 'Kote', D: 'Do', T: 'Tsuki', '∆': 'Hansoku (two give the other side an ippon)' }[m], onclick: () => add(m) }, m))),
+    el('div', { class: 'marks' }, shown.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : '') }, m === '∆' ? '▲' : m)), el('span', { class: 'ipp', 'aria-label': ippon + ' ippon' }, ippon)),
+    el('div', { class: 'keys' }, ['M', 'K', 'D', 'T', '∆'].map(m => el('button', { class: 'key' + (m === '∆' ? ' hs' : ''), disabled: opts.locked, title: { M: 'Men', K: 'Kote', D: 'Do', T: 'Tsuki', '∆': 'Hansoku (two give the other side an ippon)' }[m], onclick: () => add(m) }, m === '∆' ? '▲' : m))),
     el('div', { class: 'row' },
       el('button', { class: 'btn', disabled: opts.locked || !shown.length, onclick: undo }, 'Undo last'),
       el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!rawF['_' + fkey], disabled: opts.pendingAny || opts.locked, onchange: e => patchRow(rawF.row, { [fkey]: e.target.checked }) }), 'Forfeit')),

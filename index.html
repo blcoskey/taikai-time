@@ -80,7 +80,7 @@
   .mk { min-width: 26px; height: 26px; padding: 0 5px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
   .red .mk { background: var(--red-bg); color: var(--red); }
   .white .mk { background: var(--white-bg); color: var(--ink); }
-  .mk.hs { background: var(--warn-bg) !important; color: var(--warn) !important; }
+  .mk.hs { background: #b45f06 !important; color: #ffffff !important; }
   .score { width: 30px; text-align: right; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .fnote { font-size: 13px; color: var(--muted); margin-top: 6px; }
   .fnote.warn { color: var(--warn); font-weight: 600; }
@@ -214,7 +214,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js?v=1795808072"></script>
+<script src="config.js?v=1795808233"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -1030,7 +1030,7 @@ function sideRow(f, side) {
     el('div', { class: 'who' },
       el('div', { class: 'nm' + (s.pending ? ' pending' : ''), onclick: s.pending ? null : () => setQuery(s.name) }, s.label),
       s.dojo ? el('div', { class: 'dj' }, s.dojo) : (s.members && s.members.length) ? el('div', { class: 'dj' }, s.members.join(', ')) : null),
-    el('div', { class: 'marks', 'aria-label': (side === 'red' ? 'Red' : 'White') + ' marks' }, s.marks.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m))),
+    el('div', { class: 'marks', 'aria-label': (side === 'red' ? 'Red' : 'White') + ' marks' }, s.marks.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m === '∆' ? '▲' : m))),
     f.team ? el('div', { class: 'tscore' }, teamStarted(f) ? s.ippon + ' ipp · ' + (f.scores ? f.scores[side] : 0) + ' pts' : '') : null,
     el('div', { class: 'score', 'aria-label': f.team ? f.wins[side] + ' fights won' : s.ippon + ' ippon' }, f.team ? (teamStarted(f) ? f.wins[side] : '') : (f.done || s.marks.length) ? s.ippon : ''));
 }
@@ -1041,7 +1041,7 @@ function boutRows(f) {
     const waitingOn = [f.orders.red ? null : f.red.label, f.orders.white ? null : f.white.label].filter(Boolean);
     return el('div', { class: 'fnote' }, 'Awaiting team orders' + (waitingOn.length === 1 ? ' from ' + waitingOn[0] : '') + '. The fights show here once both teams have handed theirs in.');
   }
-  const marks = (ms, side) => el('span', { class: 'bm ' + side }, ms.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m)));
+  const marks = (ms, side) => el('span', { class: 'bm ' + side }, ms.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m === '∆' ? '▲' : m)));
   return el('div', { class: 'bouts' }, f.bouts.filter(b => !b.extra || b.done || b.red.marks.length || b.white.marks.length || (b.red.name && b.white.name)).map(b => {
     const started = b.done || b.red.marks.length || b.white.marks.length;
     return el('div', { class: 'bout' + (started ? '' : ' pending') },
