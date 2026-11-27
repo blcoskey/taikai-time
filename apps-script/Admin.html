@@ -463,7 +463,8 @@ function shiaiTeamRows(matches, settings, members) {
     out.push(Object.assign({}, m, { bout: 'Team' }));
     var rm = (members || {})[shiaiKey(m.red)] || [], wm = (members || {})[shiaiKey(m.white)] || [];
     pos.concat([SHIAI_PLAYOFF_BOUT]).forEach(function (p, i) {
-      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: p === SHIAI_PLAYOFF_BOUT ? '' : (rm[i] || ''), white: p === SHIAI_PLAYOFF_BOUT ? '' : (wm[i] || ''), pool: '', redFrom: '', whiteFrom: '' });
+      // Bout names stay empty: each team hands in its order before the match and the table enters it.
+      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: '', white: '', pool: '', redFrom: '', whiteFrom: '' });
     });
   });
   return out;
@@ -710,6 +711,19 @@ function shiaiCompute(raw) {
     spirit = Object.keys(tally).map(function (k) { return tally[k]; }).sort(function (a, b) { return b.votes - a.votes || a.name.localeCompare(b.name); });
   }
 
+  // Has each team's fighting order been entered? A side is in once every regular bout it can fill
+  // has a name. The board only shows the bouts once both are in (or the match has started).
+  function teamOrders_(f) {
+    var regular = f.bouts.filter(function (b) { return !b.extra; });
+    var side = function (key, name, pending) {
+      if (pending) return false;
+      var need = Math.min(regular.length, membersOf(name).length || regular.length);
+      return need > 0 && regular.filter(function (b) { return shiaiClean(b[key]); }).length >= need;
+    };
+    var red = side('redTyped', f.redName, f.redPending), white = side('whiteTyped', f.whiteName, f.whitePending);
+    var started = f.done || f.forfeit || f.bouts.some(function (b) { return b.done || b.rm.length || b.wm.length; });
+    return { red: red, white: white, both: (red && white) || started };
+  }
   var dojoOf = function (n) { var f = byName[shiaiKey(n)]; return f ? f.dojo : ''; };
   var membersOf = function (n) { var f = byName[shiaiKey(n)]; return f && f.members ? f.members : []; };
   return {
@@ -728,11 +742,11 @@ function shiaiCompute(raw) {
         shinpan: f.shinpan,
         team: !!f.team, level: !!f.level,
         wins: f.team ? { red: f.rWins, white: f.wWins } : null,
-        bouts: f.team ? f.bouts.map(function (b, k) {
-          var rmem = membersOf(f.redName), wmem = membersOf(f.whiteName);
+        bouts: f.team ? f.bouts.map(function (b) {
           return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
-            red: { name: b.redTyped || (b.extra ? '' : rmem[k] || ''), marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || (b.extra ? '' : wmem[k] || ''), marks: b.wm, ippon: b.wIpp } };
+            red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
         }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
+        orders: f.team ? teamOrders_(f) : null,
       };
     }),
     pools: pools,
@@ -1136,8 +1150,30 @@ function teamPanel(c, st, f) {
     el('span', { class: 'pill ' + (x.done ? 'done' : x.level ? 'lvl' : '') }, x.done ? (x.result === 'draw' ? 'Draw' : 'Done') : x.level ? 'Encho' : ''));
   const boutRows = list.map(x => boutBtn(x));
   if (showEx && exRaw) boutRows.push(boutBtn(exBout || { row: exRaw.row, pos: SHIAI_PLAYOFF_BOUT, red: { name: '', marks: [] }, white: { name: '', marks: [] } }, 'Daihyosen'));
+  // Fighting orders: each team hands theirs in before the match. The board shows the bouts once both are in.
+  const ord = f.orders || { red: true, white: true, both: true };
+  const started = bouts.some(x => x.done || x.red.marks.length || x.white.marks.length);
+  const showOrders = !pending && !f.forfeit && (!ord.both || S.editOrders === f.row);
+  let orderForm = null;
+  if (showOrders) {
+    const pick = (x, side) => {
+      const cur = String(rawRow(c, x.row)[side] || '');
+      const used = list.filter(y => y.row !== x.row).map(y => String(rawRow(c, y.row)[side] || '')).filter(Boolean);
+      const opts = [''].concat((f[side].members || []).filter(m => m === cur || !used.includes(m)));
+      if (cur && !opts.includes(cur)) opts.push(cur);
+      return el('select', { class: 'cell', 'aria-label': f[side].label + ' ' + x.pos, onchange: e => patchRow(x.row, { [side]: e.target.value }) },
+        opts.map(n => el('option', Object.assign({ value: n }, n === cur ? { selected: true } : {}), n || 'Pick fighter')));
+    };
+    const state = side => el('span', { class: 'pill ' + (ord[side] ? 'done' : 'lvl') }, ord[side] ? 'Order in' : 'Waiting');
+    orderForm = el('div', { class: 'orders', style: 'margin-top:14px' },
+      el('div', { class: 'fhead' }, el('b', {}, 'Fighting orders'), el('span', { class: 'note' }, ord.both ? 'Both in. The board shows the bouts.' : 'The board shows the bouts once both orders are in.')),
+      el('table', {},
+        el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, f.red.label, ' ', state('red')), el('th', {}, f.white.label, ' ', state('white')))),
+        el('tbody', {}, list.map(x => el('tr', {}, el('td', {}, el('b', {}, x.pos)), el('td', {}, pick(x, 'red')), el('td', {}, pick(x, 'white')))))),
+      ord.both ? el('div', { class: 'row', style: 'margin-top:10px' }, el('button', { class: 'btn primary', onclick: () => { S.editOrders = null; render(); } }, 'Done')) : null);
+  }
   let panel = null;
-  if (b && !pending) {
+  if (b && !pending && !showOrders) {
     const rawB = rawRow(c, b.row);
     const comp = computed(c);
     const memberSelect = side => {
@@ -1169,8 +1205,10 @@ function teamPanel(c, st, f) {
     pending ? el('div', { class: 'alert' }, 'Waiting for ' + [f.red, f.white].filter(x => x.pending).map(x => x.label).join(' and ') + '.') : null,
     f.done ? el('div', { class: 'status' }, f.result === 'draw' ? 'Match drawn.' : (f.result === 'red' ? f.red.label : f.white.label) + ' win the match' + (f.forfeit ? ' by forfeit.' : '.')) : null,
     f.level ? el('div', { class: 'alert' }, 'Level on points. Fight the daihyosen.') : null,
-    el('div', { class: 'bouts' }, boutRows),
+    showOrders ? null : el('div', { class: 'bouts' }, boutRows),
+    orderForm,
     panel,
+    ord.both && !started && !showOrders && !f.forfeit ? el('div', { class: 'row', style: 'margin-top:10px' }, el('button', { class: 'btn', onclick: () => { S.editOrders = f.row; render(); } }, 'Change fighting orders')) : null,
     el('div', { class: 'row', style: 'margin-top:14px' }, el('span', { class: 'note' }, 'Whole team forfeits:'),
       el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!head._rF, onchange: e => patchRow(f.row, { rF: e.target.checked }) }), f.red.label),
       el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!head._wF, onchange: e => patchRow(f.row, { wF: e.target.checked }) }), f.white.label)));

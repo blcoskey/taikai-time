@@ -290,7 +290,8 @@ function shiaiTeamRows(matches, settings, members) {
     out.push(Object.assign({}, m, { bout: 'Team' }));
     var rm = (members || {})[shiaiKey(m.red)] || [], wm = (members || {})[shiaiKey(m.white)] || [];
     pos.concat([SHIAI_PLAYOFF_BOUT]).forEach(function (p, i) {
-      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: p === SHIAI_PLAYOFF_BOUT ? '' : (rm[i] || ''), white: p === SHIAI_PLAYOFF_BOUT ? '' : (wm[i] || ''), pool: '', redFrom: '', whiteFrom: '' });
+      // Bout names stay empty: each team hands in its order before the match and the table enters it.
+      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: '', white: '', pool: '', redFrom: '', whiteFrom: '' });
     });
   });
   return out;
@@ -537,6 +538,19 @@ function shiaiCompute(raw) {
     spirit = Object.keys(tally).map(function (k) { return tally[k]; }).sort(function (a, b) { return b.votes - a.votes || a.name.localeCompare(b.name); });
   }
 
+  // Has each team's fighting order been entered? A side is in once every regular bout it can fill
+  // has a name. The board only shows the bouts once both are in (or the match has started).
+  function teamOrders_(f) {
+    var regular = f.bouts.filter(function (b) { return !b.extra; });
+    var side = function (key, name, pending) {
+      if (pending) return false;
+      var need = Math.min(regular.length, membersOf(name).length || regular.length);
+      return need > 0 && regular.filter(function (b) { return shiaiClean(b[key]); }).length >= need;
+    };
+    var red = side('redTyped', f.redName, f.redPending), white = side('whiteTyped', f.whiteName, f.whitePending);
+    var started = f.done || f.forfeit || f.bouts.some(function (b) { return b.done || b.rm.length || b.wm.length; });
+    return { red: red, white: white, both: (red && white) || started };
+  }
   var dojoOf = function (n) { var f = byName[shiaiKey(n)]; return f ? f.dojo : ''; };
   var membersOf = function (n) { var f = byName[shiaiKey(n)]; return f && f.members ? f.members : []; };
   return {
@@ -555,11 +569,11 @@ function shiaiCompute(raw) {
         shinpan: f.shinpan,
         team: !!f.team, level: !!f.level,
         wins: f.team ? { red: f.rWins, white: f.wWins } : null,
-        bouts: f.team ? f.bouts.map(function (b, k) {
-          var rmem = membersOf(f.redName), wmem = membersOf(f.whiteName);
+        bouts: f.team ? f.bouts.map(function (b) {
           return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
-            red: { name: b.redTyped || (b.extra ? '' : rmem[k] || ''), marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || (b.extra ? '' : wmem[k] || ''), marks: b.wm, ippon: b.wIpp } };
+            red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
         }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
+        orders: f.team ? teamOrders_(f) : null,
       };
     }),
     pools: pools,
@@ -1215,10 +1229,12 @@ function refreshComp_(comp) {
           var po = SHIAI_PLAYOFF_RE.test(String(r[L.bout - 1]).trim());
           var rn = r[L.red - 1], wn = r[L.white - 1];
           // Before the bout starts, a name that isn't in the team (empty, or left from an earlier result) is replaced.
+          // Names are the order each team handed in. Before the bout starts, a name that isn't in the
+          // team (left from an earlier result in a knockout slot) is cleared.
           var started = r[L.done - 1] === true || hasMarks_(L, r);
-          var inTeam = function (n, side) { return cur[side].members.some(function (m) { return shiaiKey(m) === shiaiKey(n); }); };
-          if (cur && !po && !started && !cur.red.pending && !inTeam(rn, 'red')) rn = cur.red.members[k] || '';
-          if (cur && !po && !started && !cur.white.pending && !inTeam(wn, 'white')) wn = cur.white.members[k] || '';
+          var inTeam = function (n, side) { return !shiaiClean(n) || cur[side].members.some(function (m) { return shiaiKey(m) === shiaiKey(n); }); };
+          if (cur && !started && !inTeam(rn, 'red')) rn = '';
+          if (cur && !started && !inTeam(wn, 'white')) wn = '';
           red.push([rn]); white.push([wn]); k++;
         } else {
           red.push([f && r[L.redFrom - 1] ? f.red.label : r[L.red - 1]]);
@@ -1605,6 +1621,12 @@ var BOARD_CHUNK = 20000;
 function boardState_() {
   var entryRows = readEntryRows_();
   var comps = readComps_().map(function (c) { return Object.assign(shiaiCompute(readRaw_(c, entryRows)), { name: c.name }); });
+  // A team's fighting order stays private until both teams' orders are in.
+  comps.forEach(function (c) {
+    c.fights.forEach(function (f) {
+      if (f.team && f.orders && !f.orders.both) f.bouts.forEach(function (b) { b.red.name = ''; b.white.name = ''; });
+    });
+  });
   return JSON.stringify({ ok: true, event: readEvent_(), updated: new Date().toISOString(), competitions: comps });
 }
 // After a change: write the board and build the admin reply from a single read of the sheet.

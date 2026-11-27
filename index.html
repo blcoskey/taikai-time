@@ -212,7 +212,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js?v=1795805074"></script>
+<script src="config.js?v=1795805457"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -514,7 +514,8 @@ function shiaiTeamRows(matches, settings, members) {
     out.push(Object.assign({}, m, { bout: 'Team' }));
     var rm = (members || {})[shiaiKey(m.red)] || [], wm = (members || {})[shiaiKey(m.white)] || [];
     pos.concat([SHIAI_PLAYOFF_BOUT]).forEach(function (p, i) {
-      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: p === SHIAI_PLAYOFF_BOUT ? '' : (rm[i] || ''), white: p === SHIAI_PLAYOFF_BOUT ? '' : (wm[i] || ''), pool: '', redFrom: '', whiteFrom: '' });
+      // Bout names stay empty: each team hands in its order before the match and the table enters it.
+      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: '', white: '', pool: '', redFrom: '', whiteFrom: '' });
     });
   });
   return out;
@@ -761,6 +762,19 @@ function shiaiCompute(raw) {
     spirit = Object.keys(tally).map(function (k) { return tally[k]; }).sort(function (a, b) { return b.votes - a.votes || a.name.localeCompare(b.name); });
   }
 
+  // Has each team's fighting order been entered? A side is in once every regular bout it can fill
+  // has a name. The board only shows the bouts once both are in (or the match has started).
+  function teamOrders_(f) {
+    var regular = f.bouts.filter(function (b) { return !b.extra; });
+    var side = function (key, name, pending) {
+      if (pending) return false;
+      var need = Math.min(regular.length, membersOf(name).length || regular.length);
+      return need > 0 && regular.filter(function (b) { return shiaiClean(b[key]); }).length >= need;
+    };
+    var red = side('redTyped', f.redName, f.redPending), white = side('whiteTyped', f.whiteName, f.whitePending);
+    var started = f.done || f.forfeit || f.bouts.some(function (b) { return b.done || b.rm.length || b.wm.length; });
+    return { red: red, white: white, both: (red && white) || started };
+  }
   var dojoOf = function (n) { var f = byName[shiaiKey(n)]; return f ? f.dojo : ''; };
   var membersOf = function (n) { var f = byName[shiaiKey(n)]; return f && f.members ? f.members : []; };
   return {
@@ -779,11 +793,11 @@ function shiaiCompute(raw) {
         shinpan: f.shinpan,
         team: !!f.team, level: !!f.level,
         wins: f.team ? { red: f.rWins, white: f.wWins } : null,
-        bouts: f.team ? f.bouts.map(function (b, k) {
-          var rmem = membersOf(f.redName), wmem = membersOf(f.whiteName);
+        bouts: f.team ? f.bouts.map(function (b) {
           return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
-            red: { name: b.redTyped || (b.extra ? '' : rmem[k] || ''), marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || (b.extra ? '' : wmem[k] || ''), marks: b.wm, ippon: b.wIpp } };
+            red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
         }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
+        orders: f.team ? teamOrders_(f) : null,
       };
     }),
     pools: pools,
@@ -1018,6 +1032,10 @@ function sideRow(f, side) {
 const teamStarted = f => f.done || (f.bouts || []).some(b => b.done || b.red.marks.length || b.white.marks.length);
 function boutRows(f) {
   if (!f.team || !f.bouts.length || (f.red.pending && f.white.pending)) return null;
+  if (f.orders && !f.orders.both) {
+    const waitingOn = [f.orders.red ? null : f.red.label, f.orders.white ? null : f.white.label].filter(Boolean);
+    return el('div', { class: 'fnote' }, 'Awaiting team orders' + (waitingOn.length === 1 ? ' from ' + waitingOn[0] : '') + '. The bouts show here once both teams have handed theirs in.');
+  }
   const marks = (ms, side) => el('span', { class: 'bm ' + side }, ms.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m)));
   return el('div', { class: 'bouts' }, f.bouts.map(b => {
     const started = b.done || b.red.marks.length || b.white.marks.length;
