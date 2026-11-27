@@ -513,7 +513,7 @@ function shiaiCompute(raw) {
       redFrom: shiaiClean(f.redFrom), whiteFrom: shiaiClean(f.whiteFrom),
       redTyped: shiaiClean(f.red), whiteTyped: shiaiClean(f.white),
       rm: rm, wm: wm, rIpp: pts.r, wIpp: pts.w,
-      decision: decisionOf(f.decision), done: isDone(f.done),
+      decision: decisionOf(f.decision), done: isDone(f.done), encho: isDone(f.encho),
       shinpan: (f.shinpan || []).map(shiaiClean).filter(Boolean),
     };
     // Forfeits end the fight. The winner is credited two ippon (fusen-gachi); both forfeiting is a draw.
@@ -738,13 +738,13 @@ function shiaiCompute(raw) {
         order: f.order, code: f.code, stage: f.stage || (f.pool ? 'Pool ' + f.pool : ''), court: f.court, pool: f.pool, ko: !f.pool && !f.playoff, playoff: f.playoff,
         red: { name: f.redName, label: f.redLabel, pending: f.redPending, from: f.redFrom, dojo: dojoOf(f.redName), members: membersOf(f.redName), marks: f.rm, ippon: f.rIpp },
         white: { name: f.whiteName, label: f.whiteLabel, pending: f.whitePending, from: f.whiteFrom, dojo: dojoOf(f.whiteName), members: membersOf(f.whiteName), marks: f.wm, ippon: f.wIpp },
-        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit,
+        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit, encho: !!(f.encho || f.hantei),
         scores: f.team ? { red: f.rScore, white: f.wScore } : null,
         shinpan: f.shinpan,
         team: !!f.team, level: !!f.level,
         wins: f.team ? { red: f.rWins, white: f.wWins } : null,
         bouts: f.team ? f.bouts.map(function (b) {
-          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
+          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit, encho: !!(b.encho || b.hantei),
             red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
         }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
         orders: f.team ? teamOrders_(f) : null,
@@ -898,6 +898,7 @@ function applyPatch(c, f, patch) {
   if (patch.wm) f.wm = patch.wm.slice();
   if ('done' in patch) f.done = patch.done;
   if (patch.shinpan) f.shinpan = patch.shinpan.slice();
+  if ('encho' in patch) f.encho = patch.encho;
   if ('red' in patch) f.red = patch.red;
   if ('white' in patch) f.white = patch.white;
   const rF = 'rF' in patch ? patch.rF : f._rF, wF = 'wF' in patch ? patch.wF : f._wF, h = 'hantei' in patch ? patch.hantei : f._h;
@@ -1096,42 +1097,51 @@ function sideBox(side, label, sub, marks, ippon, rawF, opts) {
     el('div', { class: 'keys' }, ['M', 'K', 'D', 'T', '∆'].map(m => el('button', { class: 'key' + (m === '∆' ? ' hs' : ''), disabled: opts.locked, title: { M: 'Men', K: 'Kote', D: 'Do', T: 'Tsuki', '∆': 'Hansoku (two give the other side an ippon)' }[m], onclick: () => add(m) }, m))),
     el('div', { class: 'row' },
       el('button', { class: 'btn', disabled: opts.locked || !shown.length, onclick: undo }, 'Undo last'),
-      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!rawF['_' + fkey], disabled: opts.pendingAny, onchange: e => patchRow(rawF.row, { [fkey]: e.target.checked }) }), 'Forfeit')));
+      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!rawF['_' + fkey], disabled: opts.pendingAny, onchange: e => patchRow(rawF.row, { [fkey]: e.target.checked }) }), 'Forfeit')),
+    opts.hantei ? el('button', { class: 'btn hantei', disabled: opts.locked, onclick: opts.hantei }, 'Win by hantei') : null);
 }
+// Knockout fights, pool play-offs and the daihyosen can't end in a draw.
+const levelNow = f => !f.forfeit && !f.hantei && f.red.ippon === f.white.ippon;
+function blockDraw(c, what) {
+  toast('Level, and ' + what + ' can\'t end in a draw. Keep going in encho (next ippon wins)' + (c.settings.hantei ? ', or press Win by hantei under the winner.' : '.'));
+}
+const enchoBox = (rawF, row) => el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: rawF.encho === true || rawF.encho === 'TRUE', onchange: e => patchRow(row, { encho: e.target.checked }) }), 'Went to encho');
 function statusLine(c, f, st, isBout) {
   const allowHantei = c.settings.hantei;
   if (f.forfeit) return el('div', { class: 'status' }, /^both/i.test(f.decision) ? 'Both forfeit: draw.' : (f.result === 'red' ? 'Red' : 'White') + ' wins by forfeit (credited 2 ippon).');
   if (f.level) {
     const ench = c.settings.enchoMin ? c.settings.enchoMin + '-minute encho' : 'Encho';
-    return el('div', { class: 'alert' }, (isBout ? 'Daihyosen level. ' : 'Level. ') + ench + ': the next ippon wins. Add it, and the fight finishes by itself.' + (allowHantei ? ' If encho ends level, give hantei:' : ''),
-      allowHantei ? el('span', { class: 'row', style: 'margin-top:8px' },
-        el('button', { class: 'btn', style: 'color:var(--red)', onclick: () => patchRow(f.row, { hantei: 'Red', done: true }) }, 'Hantei: Red'),
-        el('button', { class: 'btn', onclick: () => patchRow(f.row, { hantei: 'White', done: true }) }, 'Hantei: White')) : null);
+    return el('div', { class: 'alert' }, (isBout ? 'Daihyosen level. ' : 'Level. ') + ench + ': the next ippon wins. Add it, and the fight finishes by itself.' + (allowHantei ? ' If encho ends level, press Win by hantei under the winner.' : ''));
   }
-  if (f.done) return el('div', { class: 'status' }, f.result === 'draw' ? 'Hikiwake (draw).' : (f.result === 'red' ? 'Red' : 'White') + ' wins' + (f.hantei ? ' by hantei' : '') + '.');
+  if (f.done) return el('div', { class: 'status' }, f.result === 'draw' ? 'Hikiwake (draw).' : (f.result === 'red' ? 'Red' : 'White') + ' wins' + (f.hantei ? ' by hantei' : '') + (f.encho && !f.hantei ? ' in encho' : '') + '.');
   return null;
 }
 function fightPanel(c, st, f) {
   const rawF = rawRow(c, f.row);
   const pending = f.red.pending || f.white.pending;
   const next = st.fights.find(x => x.order > f.order && !x.done);
+  const mustWin = f.ko || f.playoff;
+  const isDone = rawF.done === true || rawF.done === 'TRUE';
+  const hantei = side => c.settings.hantei && mustWin && !isDone && !pending ? () => patchRow(f.row, { hantei: side === 'red' ? 'Red' : 'White', done: true, encho: true }) : null;
   return el('div', { class: 'card' },
     el('div', { class: 'fhead' }, el('span', { class: 'big' }, '#' + f.order), el('span', { class: 'muted' }, [f.code, f.stage, st.courts > 1 ? 'Court ' + f.court : ''].filter(Boolean).join(' · '))),
     shinpanPicker(f, rawF),
     pending ? el('div', { class: 'alert' }, 'Waiting for ' + [f.red, f.white].filter(s => s.pending).map(s => s.label).join(' and ') + '.') : null,
     el('div', { class: 'sides' },
-      sideBox('red', f.red.label, f.red.dojo, f.red.marks, f.red.ippon, rawF, { pending: f.red.pending, pendingAny: pending, locked: pending }),
-      sideBox('white', f.white.label, f.white.dojo, f.white.marks, f.white.ippon, rawF, { pending: f.white.pending, pendingAny: pending, locked: pending })),
+      sideBox('red', f.red.label, f.red.dojo, f.red.marks, f.red.ippon, rawF, { pending: f.red.pending, pendingAny: pending, locked: pending, hantei: hantei('red') }),
+      sideBox('white', f.white.label, f.white.dojo, f.white.marks, f.white.ippon, rawF, { pending: f.white.pending, pendingAny: pending, locked: pending, hantei: hantei('white') })),
     statusLine(c, f, st, false),
     el('div', { class: 'actions' },
       rawF.done === true || rawF.done === 'TRUE'
         ? el('button', { class: 'btn', onclick: () => patchRow(f.row, { done: false, hantei: '' }) }, 'Reopen fight')
         : el('button', { class: 'btn good', disabled: pending, onclick: () => {
+            if (mustWin && levelNow(f)) { blockDraw(c, f.playoff ? 'a play-off' : 'a knockout fight'); return; }
             patchRow(f.row, { done: true });
             // Move on to the next fight once this one has a result (a level knockout fight stays for encho).
             const now = computed().fights.find(x => x.row === f.row);
             if (now && now.done && next) { S.sel = next.order; render(); }
           } }, 'Fight complete'),
+      mustWin && !pending ? enchoBox(rawF, f.row) : null,
       next ? el('button', { class: 'btn', onclick: () => { S.sel = next.order; render(); } }, 'Next fight: #' + next.order + ' →') : null));
 }
 function teamPanel(c, st, f) {
@@ -1184,16 +1194,18 @@ function teamPanel(c, st, f) {
       return el('select', { 'aria-label': (side === 'red' ? 'Red' : 'White') + ' fighter', onchange: e => patchRow(b.row, { [side]: e.target.value }) }, opts.map(n => el('option', Object.assign({ value: n }, n === cur ? { selected: true } : {}), n || 'Pick fighter')));
     };
     const bb = bouts.find(x => x.row === b.row) || b;
+    const bDone = rawB.done === true || rawB.done === 'TRUE';
+    const exHantei = side => c.settings.hantei && bb.extra && !bDone ? () => patchRow(b.row, { hantei: side, done: true, encho: true }) : null;
     panel = el('div', { style: 'margin-top:14px' },
       el('div', { class: 'fhead' }, el('b', {}, bb.extra ? 'Daihyosen' : bb.pos), el('span', { class: 'note' }, bb.extra ? 'Each team picks one fighter. First ippon wins.' : '')),
       el('div', { class: 'sides' },
-        sideBox('red', '', f.red.label, bb.red.marks, bb.red.ippon, rawB, { nameSelect: memberSelect('red') }),
-        sideBox('white', '', f.white.label, bb.white.marks, bb.white.ippon, rawB, { nameSelect: memberSelect('white') })),
+        sideBox('red', '', f.red.label, bb.red.marks, bb.red.ippon, rawB, { nameSelect: memberSelect('red'), hantei: exHantei('Red') }),
+        sideBox('white', '', f.white.label, bb.white.marks, bb.white.ippon, rawB, { nameSelect: memberSelect('white'), hantei: exHantei('White') })),
       statusLine(c, bb, comp, true),
       el('div', { class: 'actions' },
         rawB.done === true || rawB.done === 'TRUE'
           ? el('button', { class: 'btn', onclick: () => patchRow(b.row, { done: false, hantei: '' }) }, 'Reopen fight')
-          : el('button', { class: 'btn good', onclick: () => { patchRow(b.row, { done: true }); const nx = list.find(x => x.row > b.row && !x.done); if (nx) S.bout = nx.row; } }, 'Fight complete')));
+          : el('button', { class: 'btn good', onclick: () => { if (bb.extra && levelNow(bb)) { blockDraw(c, 'the daihyosen'); return; } patchRow(b.row, { done: true }); const nx = list.find(x => x.row > b.row && !x.done); if (nx) S.bout = nx.row; } }, 'Fight complete'), bb.extra ? enchoBox(rawB, b.row) : null));
   }
   const s = f.scores || { red: 0, white: 0 };
   return el('div', { class: 'card' },

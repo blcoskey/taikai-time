@@ -340,7 +340,7 @@ function shiaiCompute(raw) {
       redFrom: shiaiClean(f.redFrom), whiteFrom: shiaiClean(f.whiteFrom),
       redTyped: shiaiClean(f.red), whiteTyped: shiaiClean(f.white),
       rm: rm, wm: wm, rIpp: pts.r, wIpp: pts.w,
-      decision: decisionOf(f.decision), done: isDone(f.done),
+      decision: decisionOf(f.decision), done: isDone(f.done), encho: isDone(f.encho),
       shinpan: (f.shinpan || []).map(shiaiClean).filter(Boolean),
     };
     // Forfeits end the fight. The winner is credited two ippon (fusen-gachi); both forfeiting is a draw.
@@ -565,13 +565,13 @@ function shiaiCompute(raw) {
         order: f.order, code: f.code, stage: f.stage || (f.pool ? 'Pool ' + f.pool : ''), court: f.court, pool: f.pool, ko: !f.pool && !f.playoff, playoff: f.playoff,
         red: { name: f.redName, label: f.redLabel, pending: f.redPending, from: f.redFrom, dojo: dojoOf(f.redName), members: membersOf(f.redName), marks: f.rm, ippon: f.rIpp },
         white: { name: f.whiteName, label: f.whiteLabel, pending: f.whitePending, from: f.whiteFrom, dojo: dojoOf(f.whiteName), members: membersOf(f.whiteName), marks: f.wm, ippon: f.wIpp },
-        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit,
+        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit, encho: !!(f.encho || f.hantei),
         scores: f.team ? { red: f.rScore, white: f.wScore } : null,
         shinpan: f.shinpan,
         team: !!f.team, level: !!f.level,
         wins: f.team ? { red: f.rWins, white: f.wWins } : null,
         bouts: f.team ? f.bouts.map(function (b) {
-          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
+          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit, encho: !!(b.encho || b.hantei),
             red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
         }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
         orders: f.team ? teamOrders_(f) : null,
@@ -686,10 +686,10 @@ function layout_(type) {
   var t = type === 'team' ? 1 : 0;
   // Laid out like the original score sheets: Red, Red's marks, Forfeit, White's marks, Forfeit, White,
   // Fight complete, Result. Five mark boxes a side.
-  var L = { team: !!t, nm: 5, order: 1, code: 2, stage: 3, court: 4, bout: t ? 5 : 0, red: 5 + t, rm: 6 + t, rF: 11 + t, wm: 12 + t, wF: 17 + t, white: 18 + t, done: 19 + t, winner: 20 + t, shinpan: 21 + t, rIpp: 24 + t, wIpp: 25 + t, pool: 26 + t, redFrom: 27 + t, whiteFrom: 28 + t, hantei: 29 + t };
-  L.n = 29 + t;
+  var L = { team: !!t, nm: 5, order: 1, code: 2, stage: 3, court: 4, bout: t ? 5 : 0, red: 5 + t, rm: 6 + t, rF: 11 + t, wm: 12 + t, wF: 17 + t, white: 18 + t, done: 19 + t, winner: 20 + t, shinpan: 21 + t, rIpp: 24 + t, wIpp: 25 + t, pool: 26 + t, redFrom: 27 + t, whiteFrom: 28 + t, hantei: 29 + t, encho: 30 + t };
+  L.n = 30 + t;
   L.panel = L.n + 2; // pool tables start here, after one empty column
-  L.headers = ['#', 'Fight', 'Stage', 'Court'].concat(t ? ['Position'] : [], ['Red', '', '', '', '', '', 'Forfeit', '', '', '', '', '', 'Forfeit', 'White', 'Fight complete', 'Result', 'Shushin', 'Fukushin', 'Fukushin', 'Red ippon', 'White ippon', 'Pool', 'Red from', 'White from', 'Hantei']);
+  L.headers = ['#', 'Fight', 'Stage', 'Court'].concat(t ? ['Position'] : [], ['Red', '', '', '', '', '', 'Forfeit', '', '', '', '', '', 'Forfeit', 'White', 'Fight complete', 'Result', 'Shushin', 'Fukushin', 'Fukushin', 'Red ippon', 'White ippon', 'Pool', 'Red from', 'White from', 'Hantei', 'Encho']);
   return L;
 }
 function colLetter_(n) { var s = ''; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
@@ -918,7 +918,7 @@ function rowToFight_(L) {
       // A ticked Forfeit means that side forfeits, so the other side wins (and the fight is over).
       decision: decisionOfRow_(L, r), row: i + 2,
       done: r[L.done - 1] === true || r[L.rF - 1] === true || r[L.wF - 1] === true, shinpan: r.slice(L.shinpan - 1, L.shinpan + 2),
-      pool: r[L.pool - 1], redFrom: r[L.redFrom - 1], whiteFrom: r[L.whiteFrom - 1],
+      pool: r[L.pool - 1], redFrom: r[L.redFrom - 1], whiteFrom: r[L.whiteFrom - 1], encho: r[L.encho - 1] === true,
     };
   };
 }
@@ -1187,7 +1187,7 @@ function writePoolPanel_(sh, L, state) {
   if (sh.getMaxColumns() < L.panel + 8) sh.insertColumnsAfter(sh.getMaxColumns(), L.panel + 8 - sh.getMaxColumns());
   var first = !cache.get(key);
   if (first) {
-    sh.getRange(1, L.panel, maxRows, 9).clearContent().clearFormat().clearDataValidations();
+    sh.getRange(1, L.panel - 1, maxRows, 10).clearContent().clearFormat().clearDataValidations();
     sh.getRange(1, L.panel, 1, 9).setValues([['POOLS (fills in by itself)', '', '', '', '', '', '', '', '']]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff');
     sh.setColumnWidth(L.panel - 1, 24);
     [50, 190, 55, 50, 55, 45, 50, 55, 110].forEach(function (w, i) { sh.setColumnWidth(L.panel + i, w); });
@@ -1335,7 +1335,7 @@ function formatFights_(sh, comp, known) {
   var A = function (c) { return colLetter_(c); };
   // Header, frozen panes and column widths only change with the layout: do them once per tab.
   var props = PropertiesService.getDocumentProperties(), fmtKey = 'fmt|' + sh.getSheetId();
-  var fmtSig = L.n + '|' + L.team + '|v2';
+  var fmtSig = L.n + '|' + L.team + '|v3';
   if (props.getProperty(fmtKey) !== fmtSig) {
   sh.getRange(1, 1, 1, L.n).setValues([L.headers]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff').setHorizontalAlignment('center');
   sh.getRange(1, L.red, 1, L.nm + 2).setBackground('#c8102e');
@@ -1345,7 +1345,7 @@ function formatFights_(sh, comp, known) {
   var widths = {};
   widths[L.order] = 40; widths[L.code] = 70; widths[L.stage] = 130; widths[L.court] = 50; if (L.bout) widths[L.bout] = 80;
   widths[L.red] = 200; widths[L.white] = 200; widths[L.rF] = 62; widths[L.wF] = 62; widths[L.done] = 70; widths[L.rIpp] = 95; widths[L.wIpp] = 95; widths[L.winner] = 200;
-  widths[L.shinpan] = 150; widths[L.shinpan + 1] = 150; widths[L.shinpan + 2] = 150; widths[L.pool] = 45; widths[L.redFrom] = 80; widths[L.whiteFrom] = 80;
+  widths[L.shinpan] = 150; widths[L.shinpan + 1] = 150; widths[L.shinpan + 2] = 150; widths[L.pool] = 45; widths[L.redFrom] = 80; widths[L.whiteFrom] = 80; widths[L.hantei] = 60; widths[L.encho] = 60;
   for (var c = 1; c <= L.n; c++) sh.setColumnWidth(c, widths[c] || 32);
   props.setProperty(fmtKey, fmtSig);
   }
@@ -1355,6 +1355,7 @@ function formatFights_(sh, comp, known) {
   [L.rm, L.wm].forEach(function (c) { sh.getRange(2, c, n, L.nm).setHorizontalAlignment('center').setFontWeight('bold').setDataValidation(markRule); });
   sh.getRange(2, L.rF, n, 1).insertCheckboxes(); sh.getRange(2, L.wF, n, 1).insertCheckboxes();
   sh.getRange(2, L.done, n, 1).insertCheckboxes();
+  sh.getRange(2, L.encho, n, 1).insertCheckboxes();
   sh.getRange(2, L.hantei, n, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Red', 'White'], true).setAllowInvalid(false).setHelpText('Only after encho, where the competition allows hantei.').build());
   var shinpan = sheet_(TAB.shinpan);
   if (shinpan) sh.getRange(2, L.shinpan, n, 3).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(shinpan.getRange('A2:A'), true).setAllowInvalid(true).build());
@@ -1480,16 +1481,17 @@ function adminSaveMany(items) {
       if ('wF' in patch) set(L.wF, !!patch.wF);
       if ('done' in patch) set(L.done, !!patch.done);
       if ('hantei' in patch) set(L.hantei, patch.hantei || '');
+      if ('encho' in patch) set(L.encho, !!patch.encho);
       if (patch.shinpan) for (var k = 0; k < 3; k++) set(L.shinpan + k, patch.shinpan[k] || '');
       if (L.team && 'red' in patch) set(L.red, patch.red || '');
       if (L.team && 'white' in patch) set(L.white, patch.white || '');
       // Write only the typed cells, so the formulas in the row stay. Red to Fight complete has no formulas.
       var keys = Object.keys(patch);
-      if (keys.some(function (k) { return k !== 'shinpan' && k !== 'hantei'; })) sh.getRange(row, L.red, 1, L.done - L.red + 1).setValues([r.slice(L.red - 1, L.done)]);
+      if (keys.some(function (k) { return k !== 'shinpan' && k !== 'hantei' && k !== 'encho'; })) sh.getRange(row, L.red, 1, L.done - L.red + 1).setValues([r.slice(L.red - 1, L.done)]);
       if (patch.shinpan) sh.getRange(row, L.shinpan, 1, 3).setValues([r.slice(L.shinpan - 1, L.shinpan + 2)]);
-      if ('hantei' in patch) sh.getRange(row, L.hantei).setValue(r[L.hantei - 1]);
+      if ('hantei' in patch || 'encho' in patch) sh.getRange(row, L.hantei, 1, 2).setValues([[r[L.hantei - 1], r[L.encho - 1]]]);
       // Shinpan names, and marks on an individual fight that isn't finished, don't change standings or the draw.
-      var light = keys.every(function (k) { return k === 'shinpan' || ((k === 'rm' || k === 'wm') && !L.team); }) && r[L.done - 1] !== true;
+      var light = keys.every(function (k) { return k === 'shinpan' || k === 'encho' || ((k === 'rm' || k === 'wm') && !L.team); }) && r[L.done - 1] !== true;
       if (!light) heavy[it.comp] = true;
     });
   } finally { lock.releaseLock(); }

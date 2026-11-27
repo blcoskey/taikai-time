@@ -212,7 +212,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js?v=1795805616"></script>
+<script src="config.js?v=1795805854"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -564,7 +564,7 @@ function shiaiCompute(raw) {
       redFrom: shiaiClean(f.redFrom), whiteFrom: shiaiClean(f.whiteFrom),
       redTyped: shiaiClean(f.red), whiteTyped: shiaiClean(f.white),
       rm: rm, wm: wm, rIpp: pts.r, wIpp: pts.w,
-      decision: decisionOf(f.decision), done: isDone(f.done),
+      decision: decisionOf(f.decision), done: isDone(f.done), encho: isDone(f.encho),
       shinpan: (f.shinpan || []).map(shiaiClean).filter(Boolean),
     };
     // Forfeits end the fight. The winner is credited two ippon (fusen-gachi); both forfeiting is a draw.
@@ -789,13 +789,13 @@ function shiaiCompute(raw) {
         order: f.order, code: f.code, stage: f.stage || (f.pool ? 'Pool ' + f.pool : ''), court: f.court, pool: f.pool, ko: !f.pool && !f.playoff, playoff: f.playoff,
         red: { name: f.redName, label: f.redLabel, pending: f.redPending, from: f.redFrom, dojo: dojoOf(f.redName), members: membersOf(f.redName), marks: f.rm, ippon: f.rIpp },
         white: { name: f.whiteName, label: f.whiteLabel, pending: f.whitePending, from: f.whiteFrom, dojo: dojoOf(f.whiteName), members: membersOf(f.whiteName), marks: f.wm, ippon: f.wIpp },
-        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit,
+        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit, encho: !!(f.encho || f.hantei),
         scores: f.team ? { red: f.rScore, white: f.wScore } : null,
         shinpan: f.shinpan,
         team: !!f.team, level: !!f.level,
         wins: f.team ? { red: f.rWins, white: f.wWins } : null,
         bouts: f.team ? f.bouts.map(function (b) {
-          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
+          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit, encho: !!(b.encho || b.hantei),
             red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
         }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
         orders: f.team ? teamOrders_(f) : null,
@@ -1043,7 +1043,7 @@ function boutRows(f) {
     return el('div', { class: 'bout' + (started ? '' : ' pending') },
       el('span', { class: 'bn r' + (b.result === 'red' ? ' won' : '') + (b.red.name ? '' : ' empty') }, b.red.name || '—'),
       marks(b.red.marks, 'r'),
-      el('span', { class: 'bc' }, el('small', {}, b.pos), el('b', {}, started ? b.red.ippon + '–' + b.white.ippon : 'vs')),
+      el('span', { class: 'bc' }, el('small', {}, b.pos + (b.encho ? ' · encho' : '')), el('b', {}, started ? b.red.ippon + '–' + b.white.ippon : 'vs')),
       marks(b.white.marks, 'w'),
       el('span', { class: 'bn w' + (b.result === 'white' ? ' won' : '') + (b.white.name ? '' : ' empty') }, b.white.name || '—'));
   }));
@@ -1055,6 +1055,8 @@ function fightCard(f, big) {
   if (f.decision) note = el('div', { class: 'fnote' }, /both/i.test(f.decision) ? 'Both forfeit' : f.decision.replace(/forfeit/i, 'forfeit (fusen-gachi)'));
   else if (f.level) note = el('div', { class: 'fnote warn' }, f.team ? 'Level on points. The daihyosen decides it.' : 'Level: encho. Next ippon wins.');
   else if (f.done && f.result === 'draw') note = el('div', { class: 'fnote' }, 'Hikiwake (draw)');
+  else if (f.encho) note = el('div', { class: 'fnote' + (f.done ? '' : ' warn') }, f.done ? 'Won in encho' : 'In encho. Next ippon wins.');
+  if (f.decision && f.hantei) note = el('div', { class: 'fnote' }, f.decision + ' after encho');
   return el('div', { id: big ? null : 'f-' + f.order, class: 'card fight' + (f.status === 'now' ? ' isnow' : '') + (f.done ? ' isdone' : '') + (big ? ' big' : '') + (mine && !big ? ' mine' : '') },
     el('div', { class: 'fhead' },
       el('span', { class: 'no' }, '#' + f.order),
