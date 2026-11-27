@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Shiai Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  :root {
+    --bg: #f4f2ed; --card: #ffffff; --ink: #1b1f2a; --muted: #686d78; --line: #e2dfd8; --soft: #efece6;
+    --accent: #24345e; --accent-ink: #ffffff; --red: #c8102e; --red-bg: #fbe5e8; --white-edge: #b9bfcc; --white-bg: #eef0f4;
+    --good: #2f7d4f; --good-bg: #e2f1e8; --warn: #a35a00; --warn-bg: #fdf0d8; --now: #f2b705; --done-bg: #e4e1d9; --shadow: 0 1px 3px rgba(20,24,35,.08); color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12141a; --card: #1c1f27; --ink: #eef0f5; --muted: #9aa0ad; --line: #2e323d; --soft: #252933;
+      --accent: #8fa6e8; --accent-ink: #10131a; --red: #ff5a6e; --red-bg: #3a1c22; --white-edge: #d9dde6; --white-bg: #2a2e38;
+      --good: #6fd19a; --good-bg: #1a3326; --warn: #f4b860; --warn-bg: #3a2a12; --now: #f2c84b; --done-bg: #16181e; --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141a; --card: #1c1f27; --ink: #eef0f5; --muted: #9aa0ad; --line: #2e323d; --soft: #252933;
+    --accent: #8fa6e8; --accent-ink: #10131a; --red: #ff5a6e; --red-bg: #3a1c22; --white-edge: #d9dde6; --white-bg: #2a2e38;
+    --good: #6fd19a; --good-bg: #1a3326; --warn: #f4b860; --warn-bg: #3a2a12; --now: #f2c84b; --done-bg: #16181e; --shadow: none; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; padding-bottom: env(safe-area-inset-bottom); }
+  .wrap { max-width: 640px; margin: 0 auto; padding-block: 0 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding: 12px 0 8px; }
+  .toprow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  h1 { font-size: 21px; margin: 0; letter-spacing: -.01em; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #sync { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .roundbtn { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 19px; line-height: 1; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+  #refresh.spin span { display: inline-block; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .comps { display: flex; gap: 6px; overflow-x: auto; margin: -2px 0 10px; padding-bottom: 2px; scrollbar-width: none; }
+  .comps button { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .comps button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .comps button .live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--now); margin-left: 6px; vertical-align: 1px; }
+  .tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .tabs button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 650; padding: 9px 4px; border-radius: 9px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+  .search { display: flex; gap: 8px; margin-top: 8px; }
+  .search input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+  .search button { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .demo { background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 10px; margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .demo span { flex: 1; min-width: 160px; }
+  .demo button { border: 0; background: var(--warn); color: var(--card); font: inherit; font-weight: 700; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .demo button.ghost { background: transparent; color: var(--warn); text-decoration: underline; padding: 6px 4px; }
+
+  h2.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 22px 2px 8px; font-weight: 700; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-top: 10px; box-shadow: var(--shadow); }
+  .empty { color: var(--muted); }
+
+  /* Fight cards */
+  .fight .fhead { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .fight .fhead .no { font-weight: 800; color: var(--ink); }
+  .fight .fhead .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pill { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; white-space: nowrap; letter-spacing: .02em; text-transform: uppercase; }
+  .pill.now { background: var(--now); color: #1b1f2a; }
+  .pill.next { background: var(--soft); color: var(--ink); }
+  .pill.done { background: var(--good-bg); color: var(--good); }
+  .pill.wait { background: var(--soft); color: var(--muted); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .side { display: flex; align-items: center; gap: 10px; padding: 6px 0 6px 10px; border-left: 5px solid; }
+  .side + .side { margin-top: 4px; }
+  .side.red { border-color: var(--red); }
+  .side.white { border-color: var(--white-edge); }
+  .side .who { flex: 1; min-width: 0; }
+  .side .nm { font-weight: 700; overflow-wrap: anywhere; cursor: pointer; }
+  .side .nm.pending { font-weight: 500; font-style: italic; color: var(--muted); cursor: default; }
+  .side .dj { font-size: 12px; color: var(--muted); }
+  .side.win .nm::after { content: " ✓"; color: var(--good); }
+  .side.lose { opacity: .55; }
+  .marks { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  .mk { min-width: 26px; height: 26px; padding: 0 5px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
+  .red .mk { background: var(--red-bg); color: var(--red); }
+  .white .mk { background: var(--white-bg); color: var(--ink); }
+  .mk.hs { background: var(--warn-bg) !important; color: var(--warn) !important; }
+  .score { width: 30px; text-align: right; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .fnote { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .fnote.warn { color: var(--warn); font-weight: 600; }
+  .fight.isnow { border: 2px solid var(--now); }
+  .fight { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--hdr, 200px) + 64px); }
+  .fight.isdone { background: var(--done-bg); box-shadow: none; }
+  .fight.isdone .nm { color: var(--muted); }
+  .fight.isdone .side.win .nm { color: var(--ink); }
+  .stage { position: relative; }
+  .stagehead { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--hdr, 200px)); z-index: 4; background: var(--bg); margin: 0 -2px; padding: 14px 4px 6px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); }
+  .stagehead b { font-size: 15px; letter-spacing: .02em; }
+  .stagehead span { font-size: 12px; color: var(--muted); }
+  #jump { position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); border: 0; border-radius: 999px; padding: 12px 20px; background: var(--now); color: #1b1f2a; font: inherit; font-weight: 800; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; white-space: nowrap; }
+  #jump:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .wrap { padding-bottom: 90px !important; }
+  .fight.big .side { padding-top: 10px; padding-bottom: 10px; }
+  .fight.big .nm { font-size: 19px; }
+  .fight.big .score { font-size: 30px; width: 40px; }
+  .fight.big .mk { min-width: 32px; height: 32px; font-size: 16px; }
+  .fight.mine { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .bouts { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 6px; display: grid; gap: 3px; }
+  .bout { display: grid; grid-template-columns: minmax(0, 1fr) auto 54px auto minmax(0, 1fr); align-items: center; gap: 6px; font-size: 13px; }
+  .bout .bn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .bout .bn.r { text-align: left; border-left: 3px solid var(--red); padding-left: 6px; }
+  .bout .bn.w { text-align: right; border-right: 3px solid var(--white-edge); padding-right: 6px; }
+  .bout .bn.won { font-weight: 800; }
+  .bout .bn.empty { color: var(--muted); font-style: italic; }
+  .bout .bm { display: flex; gap: 2px; }
+  .bout .bm .mk { min-width: 20px; height: 20px; font-size: 12px; padding: 0 3px; border-radius: 5px; }
+  .bout .bm.r .mk { background: var(--red-bg); color: var(--red); }
+  .bout .bm.w .mk { background: var(--white-bg); color: var(--ink); }
+  .bout .bc { text-align: center; line-height: 1.1; }
+  .bout .bc small { display: block; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .bout .bc b { font-variant-numeric: tabular-nums; }
+  .bout.pending .bc b { color: var(--muted); font-weight: 500; }
+  .tscore { font-size: 11px; color: var(--muted); text-align: right; font-weight: 600; }
+  .shin { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .shin b { font-weight: 700; color: var(--ink); }
+  .chipbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+  .chipbtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  /* Fighter focus */
+  .focus h3 { margin: 0; font-size: 19px; overflow-wrap: anywhere; }
+  .focus .meta { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .focus .big { font-weight: 700; margin-top: 8px; }
+
+  /* Pools */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: right; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; padding: 4px 3px; }
+  td { text-align: right; padding: 7px 3px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th.l, td.l { text-align: left; }
+  td.pl { width: 24px; font-weight: 800; text-align: left; }
+  td .nm { font-weight: 700; cursor: pointer; overflow-wrap: anywhere; }
+  td .dj { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+  td.pts { font-weight: 800; font-size: 15px; }
+  tr.q td.pl { color: var(--good); }
+  .through { font-size: 10px; font-weight: 800; color: var(--good); background: var(--good-bg); border-radius: 999px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; white-space: nowrap; }
+  .tiechip { font-size: 10px; font-weight: 800; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; }
+  .phead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .phead b { font-size: 18px; }
+  .phead span { font-size: 13px; color: var(--muted); }
+  .banner { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-weight: 600; font-size: 14px; background: var(--warn-bg); color: var(--warn); }
+  .legend { color: var(--muted); font-size: 13px; margin: 14px 2px 0; }
+
+  /* Results */
+  .podium { display: grid; gap: 8px; }
+  .pod { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--soft); }
+  .pod .medal { font-size: 24px; width: 30px; text-align: center; }
+  .pod .nm { font-weight: 800; font-size: 17px; overflow-wrap: anywhere; }
+  .pod .dj { font-size: 12px; color: var(--muted); }
+  .pod.gold { background: linear-gradient(90deg, rgba(242,183,5,.28), var(--soft)); }
+
+
+  /* Ladder */
+  .ladderwrap { overflow-x: auto; margin: 0 -16px; padding: 4px 16px 12px; -webkit-overflow-scrolling: touch; }
+  .lrounds { display: none; }
+  .lnode { display: flex; align-items: center; width: max-content; }
+  .lkids { display: flex; flex-direction: column; margin-right: 28px; }
+  .lkid { position: relative; padding: 6px 0; }
+  .lkid::after { content: ""; position: absolute; right: -14px; top: 50%; width: 14px; border-top: 2px solid var(--white-edge); }
+  .lkid::before { content: ""; position: absolute; right: -14px; border-right: 2px solid var(--white-edge); }
+  .lkid:first-child::before { top: 50%; bottom: 0; }
+  .lkid:last-child::before { top: 0; bottom: 50%; }
+  .lkid.only::before { display: none; }
+  .lself.fed { position: relative; }
+  .lself.fed::before { content: ""; position: absolute; left: -14px; top: 50%; width: 14px; border-top: 2px solid var(--white-edge); }
+  .lmatch { width: 178px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px 7px; box-shadow: var(--shadow); }
+  .lmatch.isdone { background: var(--done-bg); box-shadow: none; }
+  .lmatch.isnow { border: 2px solid var(--now); }
+  .lcap { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .03em; margin-bottom: 3px; }
+  .lrow { display: flex; align-items: center; gap: 6px; padding: 3px 0 3px 7px; border-left: 4px solid; font-size: 14px; }
+  .lrow + .lrow { margin-top: 3px; }
+  .lrow.red { border-color: var(--red); }
+  .lrow.white { border-color: var(--white-edge); }
+  .lnm { flex: 1; min-width: 0; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .lnm.pending { font-weight: 400; font-style: italic; color: var(--muted); cursor: default; }
+  .lrow.win .lnm { font-weight: 800; }
+  .lrow.win .lnm::after { content: " ✓"; color: var(--good); }
+  .lrow.lose { opacity: .55; }
+  .lrow.hit { background: var(--soft); border-radius: 0 6px 6px 0; }
+  .lsc { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 12px; text-align: right; }
+  .foot { margin-top: 26px; color: var(--muted); font-size: 12px; text-align: center; }
+  .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; z-index: 30; max-width: calc(100% - 32px); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="demo" class="demo hidden"><span>Demo: this year's draw from the sheet, with made-up scores when you tap Play. Connect your Google Sheet to go live.</span><button id="demoNext" type="button">Play next fight</button><button id="demoReset" type="button" class="ghost">Reset</button></div>
+  <header>
+    <div class="toprow">
+      <h1 id="title">Shiai</h1>
+      <span id="sync"></span>
+      <button id="theme" class="roundbtn" type="button" aria-label="Switch light or dark">◐</button>
+      <button id="refresh" class="roundbtn" type="button" aria-label="Refresh"><span>↻</span></button>
+    </div>
+    <nav id="comps" class="comps hidden" aria-label="Competition"></nav>
+    <nav class="tabs" role="tablist">
+      <button id="tab-fights" role="tab" aria-selected="true">Fights</button>
+      <button id="tab-pools" role="tab" aria-selected="false">Pools</button>
+      <button id="tab-ko" role="tab" aria-selected="false">Ladder</button>
+    </nav>
+    <div class="search">
+      <input id="q" type="search" placeholder="Find a fighter or dojo" autocomplete="off" aria-label="Find a fighter or dojo">
+      <button id="clear" type="button" class="hidden">Clear</button>
+    </div>
+  </header>
+  <main id="view"></main>
+  <button id="jump" type="button" class="hidden">Go to current fight</button>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script src="config.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+   SETTINGS
+   Option A (page served by the Apps Script web app): leave SCRIPT_URL empty.
+   Option B (page hosted elsewhere): paste your web app URL (ends in /exec).
+   With neither, the page runs a demo with made-up fighters.
+   ===================================================================== */
+const SCRIPT_URL = (typeof window !== 'undefined' && window.SHIAI_SCRIPT_URL) || '';
+const POLL_MS = 15000;
+
+/* ===================== SHIAI CORE (shared by Code.gs and the web page) =====================
+   Pure functions only: no sheet or page access here, so the sheet and the web app always agree.
+   Kendo scoring: M (men), K (kote), D (do), T (tsuki) and H (point from opponent's hansoku) are ippon.
+   ∆ marks one hansoku against that fighter (shown, but scores nothing).
+============================================================================================== */
+
+var SHIAI_IPPON = ['M', 'K', 'D', 'T', 'H'];
+var SHIAI_DECISIONS = ['Red wins by forfeit', 'White wins by forfeit', 'Both forfeit', 'Red wins by hantei', 'White wins by hantei'];
+var SHIAI_DEFAULTS = { title: 'Shiai', type: 'individual', teamSize: 3, courts: 1, poolSize: 3, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1, showSpirit: false, hantei: false, enchoMin: 0, forfeitIppon: 2 };
+
+function shiaiKey(s) { return String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase(); }
+function shiaiClean(s) { return String(s == null ? '' : s).trim().replace(/\s+/g, ' '); }
+
+function shiaiMark(v) {
+  var s = String(v == null ? '' : v).trim().toUpperCase();
+  if (!s) return '';
+  if (s === '∆' || s === 'Δ' || s === '▲' || s === '△' || s === '^' || s === 'X') return '∆';
+  return s.charAt(0);
+}
+
+// Pool round robin order. Red is listed first. Small pools use the usual fixed orders.
+function shiaiRoundRobin(n) {
+  if (n < 2) return [];
+  if (n === 2) return [[1, 2]];
+  if (n === 3) return [[1, 2], [2, 3], [3, 1]];
+  if (n === 4) return [[1, 2], [3, 4], [1, 3], [2, 4], [1, 4], [2, 3]];
+  var ids = []; for (var i = 1; i <= n; i++) ids.push(i);
+  if (n % 2) ids.push(0);
+  var m = ids.length, out = [];
+  for (var r = 0; r < m - 1; r++) {
+    for (var j = 0; j < m / 2; j++) {
+      var a = ids[j], b = ids[m - 1 - j];
+      if (a && b) out.push(r % 2 ? [b, a] : [a, b]);
+    }
+    ids.splice(1, 0, ids.pop());
+  }
+  return out;
+}
+
+function shiaiPoolLetters(n) {
+  var out = [];
+  for (var i = 0; i < n; i++) out.push(i < 26 ? String.fromCharCode(65 + i) : 'P' + (i + 1));
+  return out;
+}
+
+// Put fighters without a pool into pools, keeping club mates apart where possible.
+// Returns a new list; fighters that already have a pool keep it.
+function shiaiAssignPools(fighters, poolSize) {
+  var list = fighters.map(function (f) { return { name: f.name, dojo: f.dojo, grade: f.grade, pool: shiaiClean(f.pool).toUpperCase() }; });
+  var open = list.filter(function (f) { return !f.pool; });
+  if (!open.length) return list;
+  var size = Math.max(2, Number(poolSize) || 3);
+  var existing = {};
+  list.forEach(function (f) { if (f.pool) existing[f.pool] = (existing[f.pool] || 0) + 1; });
+  var nPools = Math.max(1, Math.ceil(open.length / size));
+  var letters = shiaiPoolLetters(nPools + Object.keys(existing).length).filter(function (l) { return !existing[l]; }).slice(0, nPools);
+  // Biggest clubs first, then deal round the pools in a snake so each club spreads out.
+  var byDojo = {};
+  open.forEach(function (f) { var k = shiaiKey(f.dojo) || '~' + f.name; (byDojo[k] = byDojo[k] || []).push(f); });
+  var groups = Object.keys(byDojo).map(function (k) { return byDojo[k]; }).sort(function (a, b) { return b.length - a.length; });
+  var order = [].concat.apply([], groups);
+  var counts = letters.map(function () { return 0; });
+  var cap = letters.map(function (_, i) { return Math.floor(open.length / nPools) + (i < open.length % nPools ? 1 : 0); });
+  var clubIn = letters.map(function () { return {}; });
+  order.forEach(function (f) {
+    var k = shiaiKey(f.dojo);
+    var best = -1;
+    for (var i = 0; i < letters.length; i++) {
+      if (counts[i] >= cap[i]) continue;
+      if (best < 0) { best = i; continue; }
+      var ci = k ? (clubIn[i][k] || 0) : 0, cb = k ? (clubIn[best][k] || 0) : 0;
+      if (ci < cb || (ci === cb && counts[i] < counts[best])) best = i;
+    }
+    f.pool = letters[best]; counts[best]++;
+    if (k) clubIn[best][k] = (clubIn[best][k] || 0) + 1;
+  });
+  return list;
+}
+
+// Standard seeded bracket order, e.g. 8 -> [1,8,4,5,2,7,3,6].
+function shiaiSeedOrder(size) {
+  var order = [1];
+  while (order.length < size) {
+    var n = order.length * 2, next = [];
+    order.forEach(function (s) { next.push(s, n + 1 - s); });
+    order = next;
+  }
+  return order;
+}
+
+function shiaiRoundName(entrants) {
+  if (entrants === 2) return { stage: 'Final', code: 'FINAL' };
+  if (entrants === 4) return { stage: 'Semi-final', code: 'SF' };
+  if (entrants === 8) return { stage: 'Quarter-final', code: 'QF' };
+  return { stage: 'Last ' + entrants, code: 'R' + entrants + '-' };
+}
+
+// Knockout from pool places. Pool winners are seeded and get any byes; fighters from the same pool
+// are kept as far apart in the bracket as possible.
+function shiaiBuildKnockout(poolSizes, qualify) {
+  var pools = Object.keys(poolSizes).sort();
+  var winners = [], others = [];
+  pools.forEach(function (p) {
+    for (var place = 1; place <= Math.min(qualify, poolSizes[p]); place++) {
+      (place === 1 ? winners : others).push({ src: p + place, pool: p, place: place });
+    }
+  });
+  others.sort(function (a, b) { return a.place - b.place || (a.pool < b.pool ? -1 : 1); });
+  var q = winners.length + others.length;
+  if (q < 2) return [];
+  var size = 1; while (size < q) size *= 2;
+  var seeds = shiaiSeedOrder(size);
+  var slots = new Array(size).fill(null);
+  var n = pools.length;
+  // The SAKF layout: with 2 through from each of 2, 4, 8... pools, each pool winner meets the next
+  // pool's runner-up (A1-B2, C1-D2 | B1-C2, D1-A2). A, C... winners take the top half, B, D... the bottom,
+  // so fighters from the same pool can only meet in the final.
+  var even = n >= 2 && (n & (n - 1)) === 0 && others.length === n && others.every(function (o) { return o.place === 2; });
+  if (even) {
+    var pairs = [[], []];
+    pools.forEach(function (p, i) { pairs[i % 2].push(p + '1', pools[(i + 1) % n] + '2'); });
+    slots = pairs[0].concat(pairs[1]).map(function (src) { return { src: src }; });
+  } else winners.forEach(function (w, i) { slots[seeds.indexOf(i + 1)] = w; });
+  var free = [];
+  if (!even) seeds.forEach(function (s, i) { if (s > winners.length && s <= q) free.push(i); });
+  var meet = function (a, b) { var x = a ^ b, r = 0; while (x) { r++; x >>= 1; } return r; };
+  if (!even) others.forEach(function (o) {
+    var mates = [];
+    slots.forEach(function (s, i) { if (s && s.pool === o.pool) mates.push(i); });
+    var best = null, bestScore = -1, bestSeed = Infinity;
+    free.forEach(function (i) {
+      var score = mates.length ? Math.min.apply(null, mates.map(function (m) { return meet(i, m); })) : 99;
+      if (score > bestScore || (score === bestScore && seeds[i] < bestSeed)) { best = i; bestScore = score; bestSeed = seeds[i]; }
+    });
+    slots[best] = o; free.splice(free.indexOf(best), 1);
+  });
+  // Build rounds. Each entry is a source: 'A1' (pool place) or 'W:QF1' (winner of a fight).
+  var fights = [];
+  var current = slots.map(function (s) { return s ? s.src : null; });
+  var entrants = size;
+  while (current.length > 1) {
+    var rn = shiaiRoundName(entrants), next = [], n = 0;
+    for (var i = 0; i < current.length; i += 2) {
+      var a = current[i], b = current[i + 1];
+      if (a && b) {
+        n++;
+        var code = rn.code === 'FINAL' ? 'FINAL' : rn.code + n;
+        fights.push({ code: code, stage: rn.stage, redFrom: a, whiteFrom: b, half: i < current.length / 2 ? 0 : 1 });
+        next.push('W:' + code);
+      } else next.push(a || b);
+    }
+    current = next; entrants /= 2;
+  }
+  return fights;
+}
+
+// The whole draw: pool fights, one pool at a time on each court, then the knockout.
+function shiaiBuildDraw(fighters, settings) {
+  var st = shiaiSettings(settings);
+  var assigned = shiaiAssignPools(fighters.filter(function (f) { return shiaiClean(f.name); }), st.poolSize);
+  var pools = {};
+  assigned.forEach(function (f) { (pools[f.pool] = pools[f.pool] || []).push(f); });
+  var letters = Object.keys(pools).sort();
+  var courts = Math.max(1, st.courts);
+  var rows = [];
+  var perCourt = [];
+  for (var c = 0; c < courts; c++) perCourt.push([]);
+  // Spread pools over courts, biggest pools first, onto the court with the fewest fights.
+  var load = perCourt.map(function () { return 0; });
+  letters.slice().sort(function (a, b) { return pools[b].length - pools[a].length || (a < b ? -1 : 1); }).forEach(function (p) {
+    var c = load.indexOf(Math.min.apply(null, load));
+    perCourt[c].push(p);
+    load[c] += shiaiRoundRobin(pools[p].length).length;
+  });
+  perCourt.forEach(function (ps, ci) {
+    ps.sort();
+    var lists = ps.map(function (p) {
+      return shiaiRoundRobin(pools[p].length).map(function (pair, k) {
+        return { code: p + '-' + (k + 1), stage: 'Pool ' + p, pool: p, court: ci + 1, red: pools[p][pair[0] - 1].name, white: pools[p][pair[1] - 1].name };
+      });
+    });
+    // Each pool is fought start to finish before the next pool on that court begins.
+    lists.forEach(function (l) { l.forEach(function (f) { rows.push(f); }); });
+  });
+  var sizes = {};
+  letters.forEach(function (p) { sizes[p] = pools[p].length; });
+  var ko = st.qualify > 0 && letters.length ? shiaiBuildKnockout(sizes, st.qualify) : [];
+  ko.forEach(function (f) {
+    f.court = f.stage === 'Final' || courts === 1 ? 1 : (f.half % courts) + 1;
+    rows.push(f);
+  });
+  // Pool fights first, ordered per court; then knockout rounds in order.
+  var pool = rows.filter(function (r) { return r.pool; });
+  var koRows = rows.filter(function (r) { return !r.pool; });
+  var ordered = [];
+  if (courts > 1) {
+    // Alternate courts so fight numbers read naturally down the sheet.
+    var byCourt = []; for (var c2 = 0; c2 < courts; c2++) byCourt.push(pool.filter(function (r) { return r.court === c2 + 1; }));
+    var mx = Math.max.apply(null, byCourt.map(function (l) { return l.length; }));
+    for (var i = 0; i < mx; i++) byCourt.forEach(function (l) { if (l[i]) ordered.push(l[i]); });
+  } else ordered = pool;
+  ordered = ordered.concat(koRows);
+  ordered.forEach(function (r, i) {
+    r.order = i + 1;
+    r.red = r.red || shiaiSourceLabel(r.redFrom);
+    r.white = r.white || shiaiSourceLabel(r.whiteFrom);
+    r.redFrom = r.redFrom || ''; r.whiteFrom = r.whiteFrom || ''; r.pool = r.pool || '';
+  });
+  return { fighters: assigned, fights: ordered };
+}
+
+function shiaiOrdinal(n) { return n === 1 ? 'winner' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th'; }
+function shiaiSourceLabel(src) {
+  src = shiaiClean(src);
+  if (!src) return '';
+  var w = /^W:(.+)$/i.exec(src);
+  if (w) return 'Winner of ' + w[1].toUpperCase();
+  var p = /^([A-Za-z]+)(\d+)$/.exec(src);
+  if (p) return 'Pool ' + p[1].toUpperCase() + ' ' + shiaiOrdinal(Number(p[2]));
+  return src;
+}
+
+// Ippon for each side. M, K, D, T score. A point from hansoku can be entered as H, or left to the
+// opponent's ∆ marks: every two ∆ give one ippon. Whichever shows more is used, so it never counts twice.
+function shiaiPoints(rm, wm) {
+  var c = function (ms, m) { return ms.filter(function (x) { return x === m; }).length; };
+  var base = function (ms) { return c(ms, 'M') + c(ms, 'K') + c(ms, 'D') + c(ms, 'T'); };
+  return {
+    r: base(rm) + Math.max(c(rm, 'H'), Math.floor(c(wm, '∆') / 2)),
+    w: base(wm) + Math.max(c(wm, 'H'), Math.floor(c(rm, '∆') / 2)),
+  };
+}
+
+function shiaiPositions(n) {
+  if (n === 3) return ['Senpo', 'Chuken', 'Taisho'];
+  if (n === 5) return ['Senpo', 'Jiho', 'Chuken', 'Fukusho', 'Taisho'];
+  var out = []; for (var i = 1; i <= n; i++) out.push('Bout ' + i); return out;
+}
+var SHIAI_PLAYOFF_BOUT = 'Daihyosen';
+var SHIAI_PLAYOFF_RE = /^(daihy|play.?off)/i;
+
+// Team competitions: each match is a 'Team' row followed by one row per bout and a play-off bout row.
+// members = { teamKey: [names in order] } fills in pool lineups; scorers can change them.
+function shiaiTeamRows(matches, settings, members) {
+  var st = shiaiSettings(settings);
+  var pos = shiaiPositions(st.teamSize);
+  var out = [];
+  matches.forEach(function (m) {
+    out.push(Object.assign({}, m, { bout: 'Team' }));
+    var rm = (members || {})[shiaiKey(m.red)] || [], wm = (members || {})[shiaiKey(m.white)] || [];
+    pos.concat([SHIAI_PLAYOFF_BOUT]).forEach(function (p, i) {
+      out.push({ order: '', code: m.code, stage: '', court: '', bout: p, red: p === SHIAI_PLAYOFF_BOUT ? '' : (rm[i] || ''), white: p === SHIAI_PLAYOFF_BOUT ? '' : (wm[i] || ''), pool: '', redFrom: '', whiteFrom: '' });
+    });
+  });
+  return out;
+}
+
+function shiaiSettings(s) {
+  s = s || {};
+  var n = function (v, d) { var x = Number(v); return v === '' || v == null || !isFinite(x) ? d : x; };
+  return {
+    title: shiaiClean(s.title) || SHIAI_DEFAULTS.title,
+    courts: Math.max(1, Math.round(n(s.courts, SHIAI_DEFAULTS.courts))),
+    poolSize: Math.max(2, Math.round(n(s.poolSize, SHIAI_DEFAULTS.poolSize))),
+    qualify: Math.max(0, Math.round(n(s.qualify, SHIAI_DEFAULTS.qualify))),
+    winPts: n(s.winPts, SHIAI_DEFAULTS.winPts),
+    drawPts: n(s.drawPts, SHIAI_DEFAULTS.drawPts),
+    ipponPts: n(s.ipponPts, SHIAI_DEFAULTS.ipponPts),
+    type: /^team/i.test(shiaiClean(s.type)) ? 'team' : 'individual',
+    teamSize: Math.max(1, Math.min(7, Math.round(n(s.teamSize, SHIAI_DEFAULTS.teamSize)))),
+    showSpirit: s.showSpirit === true || /^(y|yes|true|1)$/i.test(String(s.showSpirit || '').trim()),
+    hantei: s.hantei === true || /^(y|yes|true|1)$/i.test(String(s.hantei || '').trim()),
+    enchoMin: Math.max(0, n(s.enchoMin, 0)),
+  };
+}
+
+/* raw = { settings, fighters:[{name,dojo,grade,pool}], fights:[{order,code,stage,court,red,rm[],wm[],white,decision,done,shinpan[],pool,redFrom,whiteFrom}], spirit:[name...] }
+   Returns everything the web app shows, plus the resolved names the sheet writes back. */
+function shiaiCompute(raw) {
+  var st = shiaiSettings(raw.settings);
+  var fighters = (raw.fighters || []).filter(function (f) { return shiaiClean(f.name); }).map(function (f) {
+    return { name: shiaiClean(f.name), dojo: shiaiClean(f.dojo), grade: shiaiClean(f.grade), pool: shiaiClean(f.pool).toUpperCase(), members: (f.members || []).map(shiaiClean).filter(Boolean) };
+  });
+  var byName = {};
+  fighters.forEach(function (f) { byName[shiaiKey(f.name)] = f; });
+
+  var isDone = function (v) { return v === true || /^(true|yes|y|x|✓|1)$/i.test(String(v || '').trim()); };
+  var decisionOf = function (v) { var d = shiaiClean(v); return SHIAI_DECISIONS.indexOf(d) >= 0 ? d : ''; };
+  function single(f, i) {
+    var rm = (f.rm || []).map(shiaiMark).filter(Boolean), wm = (f.wm || []).map(shiaiMark).filter(Boolean);
+    var pts = shiaiPoints(rm, wm);
+    var stage = shiaiClean(f.stage);
+    var o = {
+      order: Number(f.order) || i + 1, code: shiaiClean(f.code).toUpperCase() || String(i + 1), stage: stage,
+      court: Math.max(1, Number(f.court) || 1), pool: shiaiClean(f.pool).toUpperCase(),
+      playoff: /play.?off/i.test(stage) || /-PO\d*$/i.test(shiaiClean(f.code)),
+      redFrom: shiaiClean(f.redFrom), whiteFrom: shiaiClean(f.whiteFrom),
+      redTyped: shiaiClean(f.red), whiteTyped: shiaiClean(f.white),
+      rm: rm, wm: wm, rIpp: pts.r, wIpp: pts.w,
+      decision: decisionOf(f.decision), done: isDone(f.done),
+      shinpan: (f.shinpan || []).map(shiaiClean).filter(Boolean),
+    };
+    // Forfeits end the fight. The winner is credited two ippon (fusen-gachi); both forfeiting is a draw.
+    if (/forfeit/i.test(o.decision)) {
+      o.done = true;
+      if (/^both/i.test(o.decision)) { o.rIpp = 0; o.wIpp = 0; }
+      else if (/^red/i.test(o.decision)) { o.rIpp = SHIAI_DEFAULTS.forfeitIppon; o.wIpp = 0; }
+      else { o.wIpp = SHIAI_DEFAULTS.forfeitIppon; o.rIpp = 0; }
+      o.forfeit = true;
+    }
+    o.hantei = /hantei/i.test(o.decision);
+    o.res = !o.done ? null : /^both/i.test(o.decision) ? 'draw' : /^red/i.test(o.decision) ? 'red' : /^white/i.test(o.decision) ? 'white' : o.rIpp > o.wIpp ? 'red' : o.wIpp > o.rIpp ? 'white' : 'draw';
+    o.row = f.row;
+    return o;
+  }
+  // Knockout fights, pool play-offs and the daihyosen can't end level: the fight carries on in encho
+  // (next ippon wins), or goes to hantei where the competition allows it.
+  function mustWin_(o) {
+    if (o.res === 'draw' && !/^both/i.test(o.decision)) { o.res = null; o.done = false; o.level = true; }
+  }
+  var fights;
+  if (st.type === 'team') {
+    // Group rows into matches: a 'Team' row, then its bouts (same fight code).
+    var groups = [], cur = null;
+    (raw.fights || []).forEach(function (f) {
+      var bout = shiaiClean(f.bout);
+      if (/^team$/i.test(bout) || !cur) { cur = { head: f, bouts: [] }; groups.push(cur); if (!/^team$/i.test(bout)) cur.bouts.push(f); }
+      else cur.bouts.push(f);
+    });
+    fights = groups.filter(function (g) { return shiaiClean(g.head.red) || shiaiClean(g.head.white) || shiaiClean(g.head.redFrom) || shiaiClean(g.head.whiteFrom); }).map(function (g, i) {
+      var m = single(g.head, i);
+      m.order = i + 1;
+      m.team = true;
+      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Bout ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
+      var regular = m.bouts.filter(function (b) { return !b.extra; }), extra = m.bouts.filter(function (b) { return b.extra; })[0];
+      // As on the old team sheet: each bout gives its team 3 for a win, 2 for a draw and 1 per ippon.
+      // The team with more points wins the match. The daihyosen, if fought, counts like a bout.
+      m.rWins = 0; m.wWins = 0; m.rIpp = 0; m.wIpp = 0; m.draws = 0;
+      var tally = function (b) { m.rIpp += b.rIpp; m.wIpp += b.wIpp; if (b.res === 'red') m.rWins++; else if (b.res === 'white') m.wWins++; else if (b.res === 'draw') m.draws++; };
+      regular.forEach(function (b) { if (b.done) tally(b); });
+      if (extra && extra.done && extra.res) tally(extra);
+      var allDone = regular.length > 0 && regular.every(function (b) { return b.done; });
+      var res = null;
+      if (m.decision && /forfeit/i.test(m.decision)) {
+        // A whole team forfeits: the winner takes every bout as a forfeit win.
+        var full = regular.length || st.teamSize;
+        m.rWins = 0; m.wWins = 0; m.draws = 0; m.rIpp = 0; m.wIpp = 0;
+        if (/^both/i.test(m.decision)) res = 'draw';
+        else if (/^red/i.test(m.decision)) { res = 'red'; m.rWins = full; m.rIpp = full * SHIAI_DEFAULTS.forfeitIppon; }
+        else { res = 'white'; m.wWins = full; m.wIpp = full * SHIAI_DEFAULTS.forfeitIppon; }
+      } else if (allDone) {
+        var sR = m.rWins * st.winPts + m.draws * st.drawPts + m.rIpp * st.ipponPts, sW = m.wWins * st.winPts + m.draws * st.drawPts + m.wIpp * st.ipponPts;
+        res = sR > sW ? 'red' : sW > sR ? 'white' : 'draw';
+        // Knockout matches can't end level: the daihyosen decides it.
+        if (res === 'draw' && !m.pool) { res = null; m.level = true; }
+      }
+      m.rScore = m.rWins * st.winPts + m.draws * st.drawPts + m.rIpp * st.ipponPts;
+      m.wScore = m.wWins * st.winPts + m.draws * st.drawPts + m.wIpp * st.ipponPts;
+      m.res = res;
+      m.done = !!res;
+      m.started = regular.some(function (b) { return b.done || b.rm.length || b.wm.length; });
+      m.rm = []; m.wm = [];
+      return m;
+    });
+  } else {
+    fights = (raw.fights || []).filter(function (f) { return shiaiClean(f.red) || shiaiClean(f.white) || shiaiClean(f.redFrom) || shiaiClean(f.whiteFrom); }).map(single);
+    fights.forEach(function (f) { if (!f.pool || f.playoff) mustWin_(f); });
+  }
+  fights.sort(function (a, b) { return a.order - b.order; });
+  fights.forEach(function (f, i) { f.order = i + 1; });
+  var byCode = {};
+  fights.forEach(function (f) { byCode[f.code] = f; });
+
+  function outcome(f) { return f.res || null; }
+
+  // Pools. Pool fights always have their names typed in by the draw.
+  var poolNames = {};
+  fighters.forEach(function (f) { if (f.pool) poolNames[f.pool] = true; });
+  fights.forEach(function (f) { if (f.pool) poolNames[f.pool] = true; });
+  var pools = Object.keys(poolNames).sort().map(function (p) {
+    var members = fighters.filter(function (f) { return f.pool === p; }).map(function (f) { return f.name; });
+    var pf = fights.filter(function (f) { return f.pool === p; });
+    pf.forEach(function (f) {
+      [f.redTyped, f.whiteTyped].forEach(function (n) { if (n && !members.some(function (m) { return shiaiKey(m) === shiaiKey(n); })) members.push(n); });
+    });
+    var rows = members.map(function (name) {
+      var fr = byName[shiaiKey(name)];
+      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poIpp: 0 };
+    });
+    var row = function (n) { return rows.filter(function (r) { return shiaiKey(r.name) === shiaiKey(n); })[0]; };
+    var main = pf.filter(function (f) { return !f.playoff; });
+    main.forEach(function (f) {
+      var o = outcome(f); if (!o) return;
+      var r = row(f.redTyped), w = row(f.whiteTyped); if (!r || !w) return;
+      r.fought++; w.fought++; r.ipp += f.rIpp; w.ipp += f.wIpp; r.against += f.wIpp; w.against += f.rIpp;
+      if (f.team) { r.score = (r.score || 0) + f.rScore; w.score = (w.score || 0) + f.wScore; }
+      if (o === 'red') { r.w++; w.l++; } else if (o === 'white') { w.w++; r.l++; } else { r.d++; w.d++; }
+    });
+    pf.filter(function (f) { return f.playoff; }).forEach(function (f) {
+      var o = outcome(f); if (!o) return;
+      var r = row(f.redTyped), w = row(f.whiteTyped); if (!r || !w) return;
+      r.poIpp += f.rIpp; w.poIpp += f.wIpp;
+      if (o === 'red') r.poW++; else if (o === 'white') w.poW++;
+    });
+    // Individual: 3 a win, 2 a draw, 1 per ippon. Teams: the bout points of every match added up.
+    rows.forEach(function (r) { r.points = st.type === 'team' ? (r.score || 0) : r.w * st.winPts + r.d * st.drawPts + r.ipp * st.ipponPts; });
+    rows.sort(function (a, b) { return b.points - a.points || b.poW - a.poW || b.poIpp - a.poIpp || a.name.localeCompare(b.name); });
+    var same = function (a, b) { return a.points === b.points && a.poW === b.poW && a.poIpp === b.poIpp; };
+    rows.forEach(function (r, i) {
+      r.place = i && same(rows[i - 1], r) ? rows[i - 1].place : i + 1;
+    });
+    var complete = main.length > 0 && main.every(function (f) { return outcome(f); });
+    var qual = st.qualify;
+    var tiedPlaces = [];
+    rows.forEach(function (r) {
+      var group = rows.filter(function (x) { return x.place === r.place; });
+      r.tied = group.length > 1 && r.place <= Math.max(1, qual);
+      if (r.tied && tiedPlaces.indexOf(r.place) < 0) tiedPlaces.push(r.place);
+      r.qualified = complete && !r.tied && r.place <= qual;
+    });
+    var tiedNames = complete ? rows.filter(function (r) { return r.tied; }).map(function (r) { return r.name; }) : [];
+    return {
+      pool: p, complete: complete, played: main.filter(function (f) { return outcome(f); }).length, total: main.length,
+      playoffNeeded: complete && tiedNames.length > 0, tiedNames: tiedNames,
+      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought, w: r.w, d: r.d, l: r.l, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
+    };
+  });
+  var poolBy = {};
+  pools.forEach(function (p) { poolBy[p.pool] = p; });
+
+  // Resolve a source like 'A1' or 'W:QF1' to a name, or null while it is not decided.
+  function resolve(src) {
+    var w = /^W:(.+)$/i.exec(src);
+    if (w) {
+      var f = byCode[w[1].toUpperCase()];
+      if (!f || !f.result || f.result === 'draw') return null;
+      return f.result === 'red' ? f.redName : f.whiteName;
+    }
+    var m = /^([A-Za-z]+)(\d+)$/.exec(src);
+    if (m) {
+      var pl = poolBy[m[1].toUpperCase()], place = Number(m[2]);
+      if (!pl || !pl.complete) return null;
+      var at = pl.rows.filter(function (r) { return r.place === place; });
+      return at.length === 1 && !at[0].tied ? at[0].name : null;
+    }
+    return null;
+  }
+  fights.forEach(function (f) {
+    ['red', 'white'].forEach(function (side) {
+      var from = f[side + 'From'], typed = f[side + 'Typed'];
+      var name = from ? resolve(from) : typed;
+      f[side + 'Name'] = name || '';
+      f[side + 'Label'] = name || shiaiSourceLabel(from) || 'To be decided';
+      f[side + 'Pending'] = !name;
+    });
+    var o = outcome(f);
+    f.result = o;
+  });
+
+  // Now / next per court: the first fights not yet done.
+  var courts = {};
+  fights.forEach(function (f) { courts[f.court] = true; });
+  Object.keys(courts).forEach(function (c) {
+    var left = fights.filter(function (f) { return String(f.court) === c && !f.done; });
+    if (left[0]) left[0].status = 'now';
+    if (left[1]) left[1].status = 'next';
+  });
+
+  // Results
+  var ko = fights.filter(function (f) { return !f.pool && !f.playoff; });
+  var final = byCode.FINAL;
+  var results = null;
+  var winnerOf = function (f) { return f.result === 'red' ? f.redName : f.result === 'white' ? f.whiteName : ''; };
+  var loserOf = function (f) { return f.result === 'red' ? f.whiteName : f.result === 'white' ? f.redName : ''; };
+  if (final && final.result && final.result !== 'draw') {
+    var thirds = ko.filter(function (f) { return f.stage === 'Semi-final'; }).map(loserOf).filter(Boolean);
+    results = { first: winnerOf(final), second: loserOf(final), thirds: thirds };
+  } else if (!ko.length && pools.length === 1 && pools[0].complete && !pools[0].playoffNeeded) {
+    var rr = pools[0].rows;
+    results = { first: rr[0] ? rr[0].name : '', second: rr[1] ? rr[1].name : '', thirds: rr[2] ? [rr[2].name] : [] };
+  }
+  var spirit = [];
+  if (st.showSpirit) {
+    var tally = {};
+    (raw.spirit || []).map(shiaiClean).filter(Boolean).forEach(function (n) { var k = shiaiKey(n); tally[k] = tally[k] || { name: n, votes: 0 }; tally[k].votes++; });
+    spirit = Object.keys(tally).map(function (k) { return tally[k]; }).sort(function (a, b) { return b.votes - a.votes || a.name.localeCompare(b.name); });
+  }
+
+  var dojoOf = function (n) { var f = byName[shiaiKey(n)]; return f ? f.dojo : ''; };
+  var membersOf = function (n) { var f = byName[shiaiKey(n)]; return f && f.members ? f.members : []; };
+  return {
+    title: st.title,
+    type: st.type,
+    courts: Object.keys(courts).length,
+    settings: { winPts: st.winPts, drawPts: st.drawPts, ipponPts: st.ipponPts, qualify: st.qualify, hantei: st.hantei, enchoMin: st.enchoMin, teamSize: st.teamSize },
+    fighters: fighters.map(function (f) { return { name: f.name, dojo: f.dojo, pool: f.pool, members: f.members }; }),
+    fights: fights.map(function (f) {
+      return {
+        order: f.order, code: f.code, stage: f.stage || (f.pool ? 'Pool ' + f.pool : ''), court: f.court, pool: f.pool, ko: !f.pool && !f.playoff, playoff: f.playoff,
+        red: { name: f.redName, label: f.redLabel, pending: f.redPending, from: f.redFrom, dojo: dojoOf(f.redName), members: membersOf(f.redName), marks: f.rm, ippon: f.rIpp },
+        white: { name: f.whiteName, label: f.whiteLabel, pending: f.whitePending, from: f.whiteFrom, dojo: dojoOf(f.whiteName), members: membersOf(f.whiteName), marks: f.wm, ippon: f.wIpp },
+        decision: f.decision, done: f.done, result: f.result, status: f.status || (f.done ? 'done' : 'later'), row: f.row, hantei: !!f.hantei, forfeit: !!f.forfeit,
+        scores: f.team ? { red: f.rScore, white: f.wScore } : null,
+        shinpan: f.shinpan,
+        team: !!f.team, level: !!f.level,
+        wins: f.team ? { red: f.rWins, white: f.wWins } : null,
+        bouts: f.team ? f.bouts.map(function (b, k) {
+          var rmem = membersOf(f.redName), wmem = membersOf(f.whiteName);
+          return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit,
+            red: { name: b.redTyped || (b.extra ? '' : rmem[k] || ''), marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || (b.extra ? '' : wmem[k] || ''), marks: b.wm, ippon: b.wIpp } };
+        }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
+      };
+    }),
+    pools: pools,
+    results: results,
+    spirit: spirit,
+  };
+}
+
+// Time estimate formulas for the Competitions tab. tab = fights tab name, L = the competition's column
+// letter, R = row numbers of the settings. Counts the fights on the tab: fights (team bouts) before the
+// semi-finals take the first time, the semi-finals and final the second. Courts run side by side.
+function shiaiTimingFormulas(tab, team, L, R) {
+  var q = "'" + tab.replace(/'/g, "''") + "'!";
+  var B = q + '$B$2:$B$2000', E = q + '$E$2:$E$2000';
+  var notBout = team ? ',' + E + ',"<>Team",' + E + ',"<>' + SHIAI_PLAYOFF_BOUT + '"' : '';
+  var count = function (crit) { return 'COUNTIFS(' + B + ',' + crit + notBout + ')'; };
+  var late = count('"SF*"') + '+' + count('"FINAL"');
+  var courts = 'MAX(1,N(' + L + R.courts + '))';
+  return {
+    early: '=' + count('"<>"') + '-(' + late + ')',
+    late: '=' + late,
+    time: '=(ROUNDUP(' + L + R.nEarly + '/' + courts + ',0)*' + L + R.early + '+ROUNDUP(' + L + R.nLate + '/' + courts + ',0)*' + L + R.late + ')/1440',
+    finish: '=IF(' + L + R.start + '="","",' + L + R.start + '+' + L + R.time + ')',
+  };
+}
+
+// Shinpan rotation: three referee a match (shushin first, then two fukushin). Every two matches the
+// longest-serving one steps out and the next on the list steps in, so the list cycles in order.
+// block = which pair of matches this is, counted through the whole day.
+var SHIAI_MATCHES_PER_ROTATION = 2;
+function shiaiShinpanFor(names, block) {
+  var n = names.length, out = ['', '', ''];
+  for (var k = 0; k < Math.min(3, n); k++) out[k] = names[(block + k) % n];
+  return out;
+}
+
+// The pool table that sits beside the fights on the admin sheet: one block per pool, with
+// what's left to fight and whether a play-off is needed. Returns rows of 9 cells and a style per row.
+var SHIAI_PANEL_HEAD = ['Place', 'Fighter', 'Fought', 'Won', 'Drawn', 'Lost', 'Ippon', 'Points', 'Status'];
+function shiaiPoolPanel(state) {
+  var rows = [], styles = [];
+  var team = state.type === 'team';
+  var push = function (r, s) { while (r.length < 9) r.push(''); rows.push(r); styles.push(s); };
+  var ordinal = function (n) { return n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th'; };
+  if (!state.pools.length) { push(['No pools yet. Generate the draw first.'], 'note'); return { rows: rows, styles: styles }; }
+  state.pools.forEach(function (p) {
+    var left = p.total - p.played;
+    var status = !p.total ? 'no fights' : p.playoffNeeded ? 'PLAY-OFF NEEDED' : p.complete ? 'finished' : p.played + ' of ' + p.total + (p.total === 1 ? ' fight' : ' fights') + ' done, ' + left + ' to go';
+    push(['Pool ' + p.pool, status], p.playoffNeeded ? 'alert-title' : p.complete ? 'done-title' : 'title');
+    var head = SHIAI_PANEL_HEAD.slice(); if (team) head[1] = 'Team';
+    push(head, 'head');
+    p.rows.forEach(function (r) {
+      var st = r.tied ? 'Tied: play-off' : r.qualified ? 'Through' : p.complete ? 'Out' : '';
+      push([p.played ? r.place : '', r.name, r.fought, r.w, r.d, r.l, r.ipp, r.points, st], r.tied ? 'tied' : r.qualified ? 'through' : 'row');
+    });
+    if (p.playoffNeeded) {
+      var places = {};
+      p.rows.filter(function (r) { return r.tied; }).forEach(function (r) { (places[r.place] = places[r.place] || []).push(r.name); });
+      Object.keys(places).forEach(function (pl) {
+        var nm = places[pl]; push([nm.slice(0, -1).join(', ') + ' and ' + nm[nm.length - 1] + ' are level for ' + ordinal(Number(pl)) + '. Use Shiai > Add play-off fights.'], 'alert');
+      });
+    } else if (p.complete) {
+      var through = p.rows.filter(function (r) { return r.qualified; }).map(function (r) { return ordinal(r.place) + ' ' + r.name; });
+      if (through.length) push(['Through: ' + through.join(', ')], 'note');
+    }
+    push([], 'gap');
+  });
+  return { rows: rows, styles: styles };
+}
+
+
+/* ---------------- Data sources ---------------- */
+function appsScriptSource() {
+  return () => new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(s => { try { resolve(JSON.parse(s)); } catch (e) { reject(new Error('The sheet sent something unexpected.')); } })
+      .withFailureHandler(() => reject(new Error('No connection. Check your signal.')))
+      .api();
+  });
+}
+function urlSource(url) {
+  return async () => {
+    let res;
+    try { res = await fetch(url + (url.includes('?') ? '&' : '?') + 'format=json', { redirect: 'follow' }); }
+    catch (e) { throw new Error('No connection. Check your signal.'); }
+    let d; try { d = await res.json(); } catch (e) { throw new Error('The sheet sent something unexpected.'); }
+    if (!d || d.ok !== true) throw new Error('Could not read the sheet.');
+    return d;
+  };
+}
+
+/* Demo: a made-up tournament run through the same draw and scoring code the sheet uses. */
+const DEMO_KEY = 'shiai_demo_v6';
+const DEMO_SHINPAN = ['Divana Aura Naidoo', 'Kadima Tshiantaku Kazadi', 'Alexander Kent', 'Brendan Dateling', 'Mitchell Kyle', 'Wendy Kyle', 'Warren Ho', 'Terry Chau', 'Michael Grice', 'Logann Naidoo', 'Damian Rogans', 'Brandon-lee Coskey'];
+// Demo of the SAKF Junior Nationals 2026 draw: this year's players, pools and fights from the sheet.
+// Nothing is scored yet; "Play next fight" scores the next fight with a made-up result.
+const E = list => list.map(([name, pool, dojo]) => ({ name, pool, dojo }));
+const DEMO_COMPS = [
+  { name: 'Kids', settings: { type: 'Individual', courts: 1, poolSize: 3, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1 },
+    entries: E([['Dereck Tshimanga', 'A', 'Shi Hoko'], ['Hemerick FRANCIS', 'A', 'Ryu Ken Chi'], ['Oluwatimilaya Anna Abiola', 'A', 'San Kawa'], ['Marcus Lin', 'B', 'Ryu Ken Chi'], ['Razeen Jogee', 'B', 'San Kawa']]) },
+  { name: 'Juniors', settings: { type: 'Individual', courts: 1, poolSize: 3, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1 },
+    entries: E([['Reynier van der Vyver', 'A', 'San Kawa'], ['Lisy Rasoamahenina', 'B', 'Wakaba/RKC'], ['Arabella Lark Van Rooyen', 'A', 'Ryu Ken Chi'], ['Dylan Buckley', 'A', 'Shi Hoko'], ['Michael kalambi', 'B', 'Shi Hoko'], ['Ethan hai tian cui', 'B', 'Ryu Ken Chi']]) },
+  { name: 'Teams', settings: { type: 'Team', teamSize: 3, courts: 1, poolSize: 2, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1 }, entries: [] },
+];
+// A made-up kendo result: up to two ippon each, first to two wins. Knockout fights can't end level.
+function demoResult(ko) {
+  const pick = () => 'MMMKKDT'[Math.floor(Math.random() * 7)];
+  const rm = [], wm = [];
+  const n = Math.floor(Math.random() * 4);
+  for (let i = 0; i < n && rm.length < 2 && wm.length < 2; i++) (Math.random() < 0.5 ? rm : wm).push(pick());
+  if (Math.random() < 0.15) (Math.random() < 0.5 ? rm : wm).push('∆');
+  const ipp = (o, x) => o.filter(m => m !== '∆').length + Math.floor(x.filter(m => m === '∆').length / 2);
+  if (ko && ipp(rm, wm) === ipp(wm, rm)) (Math.random() < 0.5 ? rm : wm).push(pick());
+  return { rm, wm };
+}
+function demoSource() {
+  let db = null;
+  const C = name => DEMO_COMPS.find(c => c.name === name);
+  const isTeam = def => /team/i.test(def.settings.type);
+  // Shinpan rotate as on the sheet: one swaps every two matches, carrying on from one competition to the next.
+  let block = 0;
+  function freshComp(def) {
+    const draw = shiaiBuildDraw(def.entries, def.settings);
+    const members = {}; def.entries.forEach(e => { members[shiaiKey(e.name)] = e.members || []; });
+    let j = -1;
+    const start = block;
+    const rows = (isTeam(def) ? shiaiTeamRows(draw.fights, def.settings, members) : draw.fights)
+      .map(f => { const head = !f.bout || f.bout === 'Team'; if (head) j++;
+        return Object.assign({}, f, { rm: [], wm: [], decision: '', done: false, shinpan: head ? shiaiShinpanFor(DEMO_SHINPAN, start + Math.floor(j / SHIAI_MATCHES_PER_ROTATION)) : [] }); });
+    block += Math.ceil((j + 1) / SHIAI_MATCHES_PER_ROTATION);
+    const c = { fighters: draw.fighters.map(f => Object.assign({}, f, { members: members[shiaiKey(f.name)] || [] })), rows };
+    for (let i = 0; i < (def.start || 0); i++) playNext(def.name, c);
+    return c;
+  }
+  function load() {
+    if (db) return db;
+    try { const raw = localStorage.getItem(DEMO_KEY); if (raw) { db = JSON.parse(raw); return db; } } catch (e) {}
+    block = 0; db = {}; DEMO_COMPS.forEach(def => { db[def.name] = freshComp(def); });
+    return db;
+  }
+  function save() { try { localStorage.setItem(DEMO_KEY, JSON.stringify(db)); } catch (e) {} }
+  const compute = (name, c) => {
+    return shiaiCompute({ settings: C(name).settings, fighters: c.fighters, fights: c.rows, spirit: [] });
+  };
+  function playNext(name, c) {
+    const def = C(name);
+    const next = compute(name, c).fights.find(f => !f.done && !f.red.pending && !f.white.pending);
+    if (!next) return false;
+    if (isTeam(def)) {
+      c.rows.filter(r => r.code === next.code && r.bout !== 'Team' && r.bout !== SHIAI_PLAYOFF_BOUT)
+        .forEach(r => Object.assign(r, demoResult(false), { done: true }));
+    } else Object.assign(c.rows.find(x => x.code === next.code), demoResult(!!next.ko), { done: true });
+    return true;
+  }
+  return {
+    get: () => new Promise(r => setTimeout(() => {
+      load();
+      r({ ok: true, event: 'SAKF Junior Nationals 2026 (demo)', updated: new Date().toISOString(), competitions: DEMO_COMPS.map(def => Object.assign(compute(def.name, db[def.name]), { name: def.name })) });
+    }, 120)),
+    next: name => { load(); const ok = playNext(name, db[name]); save(); return ok; },
+    reset: () => { try { localStorage.removeItem(DEMO_KEY); } catch (e) {} db = null; load(); save(); },
+  };
+}
+
+const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
+const DEMO = !IN_APPS_SCRIPT && !SCRIPT_URL;
+const demo = DEMO ? demoSource() : null;
+const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : DEMO ? demo.get : urlSource(SCRIPT_URL);
+
+/* ---------------- Helpers ---------------- */
+function lsGet(k) { try { return localStorage.getItem('shiai_' + k) || ''; } catch (e) { return ''; } }
+function lsSet(k, v) { try { v ? localStorage.setItem('shiai_' + k, v) : localStorage.removeItem('shiai_' + k); } catch (e) {} }
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true && !k.startsWith('aria-') ? '' : String(v));
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return n;
+}
+let toastTimer;
+function toast(msg) {
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = el('div', { class: 'toast', role: 'status' }, msg);
+  document.body.append(t); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 2800);
+}
+const norm = s => String(s || '').trim().toLowerCase();
+
+/* ---------------- State ---------------- */
+const S = { tab: lsGet('tab') || 'fights', all: null, data: null, comp: lsGet('comp'), q: '', lastSync: 0 };
+
+let refreshing = false;
+async function refresh(quiet) {
+  if (refreshing) return;
+  refreshing = true;
+  const btn = document.getElementById('refresh');
+  if (!quiet) btn.classList.add('spin');
+  try {
+    const first = !S.data;
+    const st = await fetchState();
+    S.all = st.competitions ? st : { event: st.title, competitions: [Object.assign({ name: st.title }, st)] };
+    pickComp();
+    S.lastSync = Date.now();
+    render();
+    if (first) scrollToNow();
+  } catch (e) {
+    if (!quiet) toast(e.message);
+    document.getElementById('sync').textContent = 'offline';
+  } finally { refreshing = false; btn.classList.remove('spin'); }
+}
+
+function pickComp() {
+  const list = S.all.competitions;
+  S.data = list.find(c => c.name === S.comp) || list[0] || null;
+  if (S.data) S.comp = S.data.name;
+}
+function setComp(name) {
+  S.comp = name; lsSet('comp', name); jumpIdx = 0; pickComp(); render(); window.scrollTo(0, 0); scrollToNow();
+}
+function scrollToNow() {
+  if (S.tab !== 'fights' || S.q || !S.data) return;
+  const f = S.data.fights.find(x => x.status === 'now');
+  const c = f && document.getElementById('f-' + f.order);
+  if (c && f.order > 1) c.scrollIntoView({ block: 'start' });
+}
+function renderComps() {
+  const box = document.getElementById('comps');
+  const list = S.all ? S.all.competitions : [];
+  box.classList.toggle('hidden', list.length < 2);
+  box.replaceChildren(...list.map(c => el('button', { type: 'button', 'aria-pressed': c.name === S.comp, onclick: () => setComp(c.name) },
+    c.name, c.fights.some(f => f.status === 'now') && !c.fights.every(f => f.done) && c.fights.some(f => f.done || f.status === 'now' && (f.red.marks.length || f.white.marks.length || (f.bouts || []).some(b => b.done))) ? el('span', { class: 'live', title: 'In progress' }) : null)));
+}
+
+/* ---------------- Render ---------------- */
+const view = document.getElementById('view');
+function render() {
+  for (const t of ['fights', 'pools', 'ko']) document.getElementById('tab-' + t).setAttribute('aria-selected', S.tab === t);
+  document.getElementById('demo').classList.toggle('hidden', !DEMO);
+  document.getElementById('clear').classList.toggle('hidden', !S.q);
+  const d = S.data;
+  if (!d) { view.replaceChildren(el('div', { class: 'card empty' }, 'Loading…')); return; }
+  renderComps();
+  const title = S.all.event || d.title;
+  document.getElementById('title').textContent = title;
+  document.title = title;
+  document.getElementById('tab-ko').classList.toggle('hidden', !d.fights.some(f => f.ko));
+  if (S.tab === 'ko' && !d.fights.some(f => f.ko)) S.tab = 'fights';
+  updateJump();
+  const content = S.tab === 'pools' ? renderPools() : S.tab === 'ko' ? renderLadder() : renderFights();
+  view.replaceChildren(content);
+  document.getElementById('sync').textContent = S.lastSync ? new Date(S.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  const done = d.fights.filter(f => f.done).length;
+  document.getElementById('foot').textContent = d.name + ': ' + done + ' of ' + d.fights.length + (d.type === 'team' ? ' matches' : ' fights') + ' done · updates every ' + Math.round(POLL_MS / 1000) + ' seconds';
+}
+
+function matches(f) {
+  if (!S.q) return true;
+  const q = norm(S.q);
+  return [f.red, f.white].some(s => norm(s.name).includes(q) || norm(s.dojo).includes(q)) || (f.bouts || []).some(b => norm(b.red.name).includes(q) || norm(b.white.name).includes(q));
+}
+function sideMatches(s) { return !!S.q && (norm(s.name).includes(norm(S.q)) || norm(s.dojo).includes(norm(S.q))); }
+function setQuery(name) {
+  S.q = name; document.getElementById('q').value = name;
+  if (S.tab !== 'fights' && S.tab !== 'pools') S.tab = 'fights';
+  render(); window.scrollTo(0, 0);
+}
+
+const courtLabel = f => S.data.courts > 1 ? 'Court ' + f.court : '';
+function statusPill(f) {
+  if (f.status === 'now') return el('span', { class: 'pill now' }, 'Now');
+  if (f.done && f.result === 'draw' && f.ko) return el('span', { class: 'pill warn' }, 'Tied');
+  if (f.done) return el('span', { class: 'pill done' }, 'Done');
+  if (f.status === 'next') return el('span', { class: 'pill next' }, 'Up next');
+  if (f.red.pending || f.white.pending) return el('span', { class: 'pill wait' }, 'Waiting');
+  return null;
+}
+function sideRow(f, side) {
+  const s = f[side];
+  const won = f.done && f.result === side, lost = f.done && (f.result === 'red' || f.result === 'white') && f.result !== side;
+  return el('div', { class: 'side ' + side + (won ? ' win' : '') + (lost ? ' lose' : '') },
+    el('div', { class: 'who' },
+      el('div', { class: 'nm' + (s.pending ? ' pending' : ''), onclick: s.pending ? null : () => setQuery(s.name) }, s.label),
+      s.dojo ? el('div', { class: 'dj' }, s.dojo) : (s.members && s.members.length) ? el('div', { class: 'dj' }, s.members.join(', ')) : null),
+    el('div', { class: 'marks', 'aria-label': (side === 'red' ? 'Red' : 'White') + ' marks' }, s.marks.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m))),
+    f.team ? el('div', { class: 'tscore' }, teamStarted(f) ? s.ippon + ' ipp · ' + (f.scores ? f.scores[side] : 0) + ' pts' : '') : null,
+    el('div', { class: 'score', 'aria-label': f.team ? f.wins[side] + ' bouts won' : s.ippon + ' ippon' }, f.team ? (teamStarted(f) ? f.wins[side] : '') : (f.done || s.marks.length) ? s.ippon : ''));
+}
+const teamStarted = f => f.done || (f.bouts || []).some(b => b.done || b.red.marks.length || b.white.marks.length);
+function boutRows(f) {
+  if (!f.team || !f.bouts.length || (f.red.pending && f.white.pending)) return null;
+  const marks = (ms, side) => el('span', { class: 'bm ' + side }, ms.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m)));
+  return el('div', { class: 'bouts' }, f.bouts.map(b => {
+    const started = b.done || b.red.marks.length || b.white.marks.length;
+    return el('div', { class: 'bout' + (started ? '' : ' pending') },
+      el('span', { class: 'bn r' + (b.result === 'red' ? ' won' : '') + (b.red.name ? '' : ' empty') }, b.red.name || '—'),
+      marks(b.red.marks, 'r'),
+      el('span', { class: 'bc' }, el('small', {}, b.pos), el('b', {}, started ? b.red.ippon + '–' + b.white.ippon : 'vs')),
+      marks(b.white.marks, 'w'),
+      el('span', { class: 'bn w' + (b.result === 'white' ? ' won' : '') + (b.white.name ? '' : ' empty') }, b.white.name || '—'));
+  }));
+}
+const MARK_NAMES = { M: 'Men', K: 'Kote', D: 'Do', T: 'Tsuki', H: 'Hansoku point', '∆': 'Hansoku' };
+function fightCard(f, big) {
+  const mine = S.q && (sideMatches(f.red) || sideMatches(f.white));
+  let note = null;
+  if (f.decision) note = el('div', { class: 'fnote' }, /both/i.test(f.decision) ? 'Both forfeit' : f.decision.replace(/forfeit/i, 'forfeit (fusen-gachi)'));
+  else if (f.level) note = el('div', { class: 'fnote warn' }, f.team ? 'Level on points. The daihyosen decides it.' : 'Level: encho. Next ippon wins.');
+  else if (f.done && f.result === 'draw') note = el('div', { class: 'fnote' }, 'Hikiwake (draw)');
+  return el('div', { id: big ? null : 'f-' + f.order, class: 'card fight' + (f.status === 'now' ? ' isnow' : '') + (f.done ? ' isdone' : '') + (big ? ' big' : '') + (mine && !big ? ' mine' : '') },
+    el('div', { class: 'fhead' },
+      el('span', { class: 'no' }, '#' + f.order),
+      el('span', { class: 'grow' }, [f.code !== f.stage ? f.code : '', f.stage, courtLabel(f)].filter(Boolean).join(' · ')),
+      statusPill(f)),
+    sideRow(f, 'red'), sideRow(f, 'white'), boutRows(f), note,
+    f.shinpan && f.shinpan.length ? el('div', { class: 'shin' },
+      el('div', {}, el('b', {}, 'Shushin '), f.shinpan[0]),
+      f.shinpan.length > 1 ? el('div', {}, el('b', {}, 'Fukushin '), f.shinpan.slice(1).join(', ')) : null) : null);
+}
+
+function focusCard() {
+  const d = S.data, q = norm(S.q);
+  const people = d.fighters.filter(f => norm(f.name).includes(q) || (f.members || []).some(m => norm(m).includes(q)));
+  if (people.length !== 1) return null;
+  const p = people[0];
+  const pool = d.pools.find(x => x.rows.some(r => norm(r.name) === norm(p.name)));
+  const row = pool && pool.rows.find(r => norm(r.name) === norm(p.name));
+  const theirs = d.fights.filter(f => norm(f.red.name) === norm(p.name) || norm(f.white.name) === norm(p.name));
+  const upcoming = theirs.find(f => !f.done);
+  let line = 'No more fights scheduled.';
+  if (upcoming) {
+    const ahead = d.fights.filter(f => !f.done && f.court === upcoming.court && f.order < upcoming.order).length;
+    line = upcoming.status === 'now' ? 'Fighting now' + (d.courts > 1 ? ' on court ' + upcoming.court : '') + '.'
+      : 'Next: fight #' + upcoming.order + (d.courts > 1 ? ' on court ' + upcoming.court : '') + ', ' + (ahead === 1 ? '1 fight' : ahead + ' fights') + ' before it.';
+  }
+  const champ = d.results && norm(d.results.first) === norm(p.name);
+  return el('div', { class: 'card focus' },
+    el('h3', {}, p.name),
+    el('div', { class: 'meta' }, [p.dojo, pool ? 'Pool ' + pool.pool + (row && pool.complete ? ', place ' + row.place : '') : ''].filter(Boolean).join(' · ')),
+    row ? el('div', { class: 'meta' }, row.w + ' won · ' + row.d + ' drawn · ' + row.l + ' lost · ' + row.ipp + ' ippon · ' + row.points + ' pts') : null,
+    el('div', { class: 'big' }, champ ? 'Champion 🏆' : line));
+}
+
+function renderFights() {
+  const d = S.data;
+  const out = [];
+  if (!d.fights.length) return el('div', { class: 'card empty' }, d.type === 'team' && !d.fighters.length ? 'Teams are picked on the day. Their fights show up here once the teams are entered and the draw is made.' : 'No fights yet. They show up here once the draw is generated in the sheet.');
+  if (S.q) {
+    const fc = focusCard(); if (fc) out.push(fc);
+    const list = d.fights.filter(matches);
+    out.push(el('h2', { class: 'sec' }, list.length ? 'Fights for "' + S.q + '"' : 'No fights match "' + S.q + '"'));
+    list.forEach(f => out.push(fightCard(f)));
+    return el('div', {}, out);
+  }
+  out.push(stageSections(d.fights, f => f.ko ? f.stage + (f.stage === 'Final' ? '' : 's') : f.playoff ? 'Pool play-offs' : 'Pools'));
+  return el('div', {}, out);
+}
+
+// Fights grouped under a heading that sticks below the top bar while you scroll that group.
+function stageSections(fights, nameOf) {
+  const groups = [];
+  fights.forEach(f => { const n = nameOf(f); const g = groups[groups.length - 1]; if (g && g.name === n) g.list.push(f); else groups.push({ name: n, list: [f] }); });
+  return el('div', {}, groups.map(g => {
+    const done = g.list.filter(f => f.done).length;
+    return el('section', { class: 'stage' },
+      el('div', { class: 'stagehead' }, el('b', {}, g.name), el('span', {}, done === g.list.length ? 'All ' + g.list.length + ' done' : done + ' of ' + g.list.length + ' done')),
+      g.list.map(f => fightCard(f, false)));
+  }));
+}
+
+function renderPools() {
+  const d = S.data;
+  if (!d.pools.length) return el('div', { class: 'card empty' }, 'No pools yet.');
+  const q = norm(S.q);
+  const pools = q ? d.pools.filter(p => p.rows.some(r => norm(r.name).includes(q) || norm(r.dojo).includes(q))) : d.pools;
+  const out = pools.map(p => el('div', { class: 'card' },
+    el('div', { class: 'phead' }, el('b', {}, 'Pool ' + p.pool), el('span', {}, p.complete ? 'Finished' : p.played + ' of ' + p.total + ' fights')),
+    el('table', {},
+      el('thead', {}, el('tr', {}, el('th', { class: 'l' }, ''), el('th', { class: 'l' }, 'Fighter'), el('th', { title: 'Won' }, 'W'), el('th', { title: 'Drawn' }, 'D'), el('th', { title: 'Lost' }, 'L'), el('th', { title: 'Ippon scored' }, 'Ipp'), el('th', { title: 'Points' }, 'Pts'))),
+      el('tbody', {}, p.rows.map(r => el('tr', { class: r.qualified ? 'q' : '' },
+        el('td', { class: 'pl' }, (p.complete || r.fought) ? r.place : '–'),
+        el('td', { class: 'l' }, el('span', { class: 'nm', onclick: () => setQuery(r.name) }, r.name), r.qualified ? el('span', { class: 'through' }, 'Through') : null, r.tied ? el('span', { class: 'tiechip' }, 'Tied') : null, (r.members && r.members.length) ? el('span', { class: 'dj' }, r.members.join(', ')) : r.dojo ? el('span', { class: 'dj' }, r.dojo) : null),
+        el('td', {}, r.w), el('td', {}, r.d), el('td', {}, r.l), el('td', {}, r.ipp), el('td', { class: 'pts' }, r.points))))),
+    p.playoffNeeded ? el('div', { class: 'banner' }, 'Play-off needed: ' + p.tiedNames.join(' and ') + ' are tied.') : null));
+  if (!out.length) out.push(el('div', { class: 'card empty' }, 'No pools match "' + S.q + '".'));
+  const st = d.settings;
+  out.push(el('p', { class: 'legend' }, 'Points: ' + st.winPts + ' for a ' + (d.type === 'team' ? 'match won' : 'win') + ', ' + st.drawPts + ' for a draw, ' + st.ipponPts + ' per ippon scored. ' + (st.qualify ? 'Top ' + st.qualify + ' in each pool go through.' : '')));
+  return el('div', {}, out);
+}
+
+function resultsCard() {
+  const d = S.data, r = d.results;
+  if (!r) return null;
+  const dojo = n => { const f = d.fighters.find(x => norm(x.name) === norm(n)); return f ? f.dojo : ''; };
+  const pod = (medal, n, cls) => el('div', { class: 'pod ' + (cls || '') }, el('span', { class: 'medal' }, medal), el('div', {}, el('div', { class: 'nm' }, n), dojo(n) ? el('div', { class: 'dj' }, dojo(n)) : null));
+  return el('div', { class: 'card' },
+    el('div', { class: 'podium' },
+      pod('🥇', r.first, 'gold'), pod('🥈', r.second), r.thirds.map(t => pod('🥉', t)),
+      d.spirit && d.spirit.length ? pod('🔥', d.spirit[0].name + ' · Fighting spirit') : null));
+}
+
+// Ladder: the knockout drawn as a bracket, built from the final back through each fight's sources.
+function ladderMatch(f) {
+  const line = side => {
+    const sd = f[side];
+    const won = f.done && f.result === side, lost = f.done && (f.result === 'red' || f.result === 'white') && f.result !== side;
+    const hit = sideMatches(sd);
+    return el('div', { class: 'lrow ' + side + (won ? ' win' : '') + (lost ? ' lose' : '') + (hit ? ' hit' : '') },
+      el('span', { class: 'lnm' + (sd.pending ? ' pending' : ''), onclick: sd.pending ? null : () => setQuery(sd.name) }, sd.label),
+      el('span', { class: 'lsc' }, f.team ? (teamStarted(f) ? f.wins[side] : '') : (f.done || sd.marks.length) ? sd.ippon : ''));
+  };
+  return el('div', { class: 'lmatch' + (f.status === 'now' ? ' isnow' : '') + (f.done ? ' isdone' : '') },
+    el('div', { class: 'lcap' }, f.code + ' · #' + f.order + (f.status === 'now' ? ' · NOW' : '') + (f.decision ? ' · ' + (/hantei/.test(f.decision) ? 'hantei' : 'forfeit') : '')),
+    line('red'), line('white'));
+}
+function ladderNode(f, byCode) {
+  const kids = ['red', 'white'].map(s => /^W:/i.test(f[s].from || '') ? byCode[f[s].from.slice(2).toUpperCase()] : null).filter(Boolean);
+  return el('div', { class: 'lnode' },
+    kids.length ? el('div', { class: 'lkids' }, kids.map(k => el('div', { class: 'lkid' + (kids.length === 1 ? ' only' : '') }, ladderNode(k, byCode)))) : null,
+    el('div', { class: 'lself' + (kids.length ? ' fed' : '') }, ladderMatch(f)));
+}
+function renderLadder() {
+  const d = S.data;
+  const out = [];
+  const res = resultsCard();
+  if (res) { out.push(el('h2', { class: 'sec' }, 'Results')); out.push(res); }
+  const ko = d.fights.filter(f => f.ko);
+  const byCode = {}; ko.forEach(f => { byCode[f.code] = f; });
+  const fed = new Set(); ko.forEach(f => ['red', 'white'].forEach(s => { if (/^W:/i.test(f[s].from || '')) fed.add(f[s].from.slice(2).toUpperCase()); }));
+  const roots = ko.filter(f => !fed.has(f.code));
+  const rounds = [...new Set(ko.map(f => f.stage))];
+  out.push(el('h2', { class: 'sec' }, 'Ladder'));
+  out.push(el('div', { class: 'ladderwrap' },
+    el('div', { class: 'lrounds' }, rounds.map(r => el('span', {}, r))),
+    roots.map(f => ladderNode(f, byCode))));
+  out.push(el('p', { class: 'legend' }, 'Scroll sideways to see the whole ladder. Tap a name to see that fighter\'s fights.'));
+  return el('div', {}, out);
+}
+
+/* Always-visible button: scrolls the fight list to the fight on now (tap again for the next court). */
+let jumpIdx = 0;
+function updateJump() {
+  const b = document.getElementById('jump');
+  const nows = S.data ? S.data.fights.filter(f => f.status === 'now') : [];
+  b.classList.toggle('hidden', !nows.length || S.tab === 'pools');
+  b.textContent = nows.length > 1 ? 'Go to current fights' : 'Go to current fight';
+}
+document.getElementById('jump').onclick = () => {
+  const nows = S.data.fights.filter(f => f.status === 'now');
+  if (!nows.length) return;
+  if (S.tab !== 'fights' || S.q) { S.tab = 'fights'; lsSet('tab', 'fights'); S.q = ''; document.getElementById('q').value = ''; render(); jumpIdx = 0; }
+  const f = nows[jumpIdx % nows.length]; jumpIdx++;
+  const card = document.getElementById('f-' + f.order);
+  if (card) card.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+};
+const headerEl = document.querySelector('header');
+const setHdr = () => document.documentElement.style.setProperty('--hdr', headerEl.offsetHeight + 'px');
+setHdr();
+if (window.ResizeObserver) new ResizeObserver(setHdr).observe(headerEl); else addEventListener('resize', setHdr);
+
+/* ---------------- Wiring ---------------- */
+function setTab(t) { S.tab = t; lsSet('tab', t); render(); window.scrollTo(0, 0); }
+document.getElementById('tab-fights').onclick = () => setTab('fights');
+document.getElementById('tab-pools').onclick = () => setTab('pools');
+document.getElementById('tab-ko').onclick = () => setTab('ko');
+document.getElementById('refresh').onclick = () => refresh(false);
+const qIn = document.getElementById('q');
+qIn.value = S.q;
+qIn.oninput = () => { S.q = qIn.value.trim(); render(); };
+document.getElementById('clear').onclick = () => { S.q = ''; qIn.value = ''; render(); };
+if (DEMO) {
+  document.getElementById('demoNext').onclick = () => { if (!demo.next(S.comp)) toast(S.comp === 'Teams' ? 'Teams are picked on the day, so there are no team fights yet.' : 'That\'s every ' + S.comp + ' fight. Tap Reset to start again.'); refresh(true); };
+  document.getElementById('demoReset').onclick = () => { demo.reset(); refresh(true); toast('Demo reset.'); };
+}
+function applyTheme(t) { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); }
+applyTheme(lsGet('theme'));
+document.getElementById('theme').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark'; applyTheme(next); lsSet('theme', next);
+};
+
+render();
+refresh(false);
+setInterval(() => { if (!document.hidden) refresh(true); }, POLL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
+</script>
+</body>
+</html>
