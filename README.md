@@ -19,4 +19,4 @@ After changing the Apps Script code: Deploy > Manage deployments > Edit > New ve
 
 Only the account that deployed the web app can score. For more scorers, sign in to that account on the scoring laptop, or redeploy with Who has access *Anyone with a Google account* and share the sheet with them as Editor.
 
-Until `config.js` has a sheet link, the board shows a demo.
+The board never shows demo data. Until `config.js` has a sheet link, it says it is not connected yet.

@@ -219,7 +219,7 @@
    SETTINGS
    SHEET: the Google Sheet's link (or just its ID), set in config.js. The sheet must be shared as
    "Anyone with the link: Viewer". The board reads the Board tab, which the sheet keeps up to date.
-   With no sheet set, the page runs a demo with made-up fighters.
+   With no sheet set, the page runs a demo with made-up fighters (unless SHIAI_LIVE is set).
    ===================================================================== */
 const SHEET = (typeof window !== 'undefined' && (window.SHIAI_SHEET || window.SHIAI_SHEET_ID)) || '';
 const SHEET_ID = (String(SHEET).match(/\/d\/([a-zA-Z0-9_-]+)/) || [])[1] || String(SHEET).trim();
@@ -910,9 +910,12 @@ function demoSource() {
 }
 
 const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
-const DEMO = !IN_APPS_SCRIPT && !SHEET_ID;
+// The live site sets SHIAI_LIVE: it only ever shows the sheet, never the demo.
+const LIVE_ONLY = typeof window !== 'undefined' && window.SHIAI_LIVE === true;
+const DEMO = !IN_APPS_SCRIPT && !SHEET_ID && !LIVE_ONLY;
 const demo = DEMO ? demoSource() : null;
-const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : DEMO ? demo.get : sheetSource(SHEET_ID);
+const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : DEMO ? demo.get
+  : SHEET_ID ? sheetSource(SHEET_ID) : () => Promise.reject(new Error('The board is not connected to the sheet yet. Add the sheet link to config.js.'));
 
 /* ---------------- Helpers ---------------- */
 function lsGet(k) { try { return localStorage.getItem('shiai_' + k) || ''; } catch (e) { return ''; } }
@@ -955,6 +958,7 @@ async function refresh(quiet) {
     if (first) scrollToNow();
   } catch (e) {
     if (!quiet) toast(e.message);
+    if (!S.data) view.replaceChildren(el('div', { class: 'card empty' }, e.message));
     document.getElementById('sync').textContent = 'offline';
   } finally { refreshing = false; btn.classList.remove('spin'); }
 }
