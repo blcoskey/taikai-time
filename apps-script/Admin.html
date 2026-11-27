@@ -1078,13 +1078,13 @@ function fightList(st, cur) {
   });
   return el('div', { class: 'card list' }, out);
 }
-function shinpanPicker(f, rawF) {
+function shinpanPicker(f, rawF, locked) {
   const names = S.data.shinpan;
   const cur = (rawF.shinpan || []).map(x => String(x || ''));
   const pick = k => {
     const opts = [''].concat(names); if (cur[k] && !names.includes(cur[k])) opts.push(cur[k]);
     return el('div', { class: 'shinpick' }, k < 2 ? el('label', {}, k ? 'Fukushin' : 'Shushin') : el('label', { 'aria-hidden': 'true' }, ''),
-      el('select', { onchange: e => { const v = cur.slice(); while (v.length < 3) v.push(''); v[k] = e.target.value; patchRow(rawF.row, { shinpan: v }); } },
+      el('select', { disabled: !!locked, onchange: e => { const v = cur.slice(); while (v.length < 3) v.push(''); v[k] = e.target.value; patchRow(rawF.row, { shinpan: v }); } },
         opts.map(n => el('option', Object.assign({ value: n }, n === (cur[k] || '') ? { selected: true } : {}), n || '—'))));
   };
   return el('div', { class: 'shinbox' }, el('div', { class: 'shin1' }, pick(0)), el('div', { class: 'shin2' }, pick(1), pick(2)));
@@ -1103,7 +1103,7 @@ function sideBox(side, label, sub, marks, ippon, rawF, opts) {
     el('div', { class: 'keys' }, ['M', 'K', 'D', 'T', '∆'].map(m => el('button', { class: 'key' + (m === '∆' ? ' hs' : ''), disabled: opts.locked, title: { M: 'Men', K: 'Kote', D: 'Do', T: 'Tsuki', '∆': 'Hansoku (two give the other side an ippon)' }[m], onclick: () => add(m) }, m))),
     el('div', { class: 'row' },
       el('button', { class: 'btn', disabled: opts.locked || !shown.length, onclick: undo }, 'Undo last'),
-      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!rawF['_' + fkey], disabled: opts.pendingAny, onchange: e => patchRow(rawF.row, { [fkey]: e.target.checked }) }), 'Forfeit')),
+      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!rawF['_' + fkey], disabled: opts.pendingAny || opts.locked, onchange: e => patchRow(rawF.row, { [fkey]: e.target.checked }) }), 'Forfeit')),
     opts.hantei ? el('button', { class: 'btn hantei', disabled: opts.locked, onclick: opts.hantei }, 'Win by hantei') : null);
 }
 // Knockout fights, pool play-offs and the daihyosen can't end in a draw.
@@ -1111,7 +1111,9 @@ const levelNow = f => !f.forfeit && !f.hantei && f.red.ippon === f.white.ippon;
 function blockDraw(c, what) {
   toast('Level, and ' + what + ' can\'t end in a draw. Keep going in encho (next ippon wins)' + (c.settings.hantei ? ', or press Win by hantei under the winner.' : '.'));
 }
-const enchoBox = (rawF, row) => el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: rawF.encho === true || rawF.encho === 'TRUE', onchange: e => patchRow(row, { encho: e.target.checked }) }), 'Went to encho');
+const isDoneRaw = r => r.done === true || r.done === 'TRUE';
+const lockedNote = what => el('div', { class: 'note', style: 'margin-top:8px' }, what + ' is complete and locked. Press Reopen fight to change anything.');
+const enchoBox = (rawF, row) => el('label', { class: 'toggle' }, el('input', { type: 'checkbox', disabled: isDoneRaw(rawF), checked: rawF.encho === true || rawF.encho === 'TRUE', onchange: e => patchRow(row, { encho: e.target.checked }) }), 'Went to encho');
 function statusLine(c, f, st, isBout) {
   const allowHantei = c.settings.hantei;
   if (f.forfeit) return el('div', { class: 'status' }, /^both/i.test(f.decision) ? 'Both forfeit: draw.' : (f.result === 'red' ? 'Red' : 'White') + ' wins by forfeit (credited 2 ippon).');
@@ -1131,12 +1133,13 @@ function fightPanel(c, st, f) {
   const hantei = side => c.settings.hantei && mustWin && !isDone && !pending ? () => patchRow(f.row, { hantei: side === 'red' ? 'Red' : 'White', done: true, encho: true }) : null;
   return el('div', { class: 'card' },
     el('div', { class: 'fhead' }, el('span', { class: 'big' }, '#' + f.order), el('span', { class: 'muted' }, [f.code, f.stage, st.courts > 1 ? 'Court ' + f.court : ''].filter(Boolean).join(' · '))),
-    shinpanPicker(f, rawF),
+    shinpanPicker(f, rawF, isDone),
     pending ? el('div', { class: 'alert' }, 'Waiting for ' + [f.red, f.white].filter(s => s.pending).map(s => s.label).join(' and ') + '.') : null,
     el('div', { class: 'sides' },
-      sideBox('red', f.red.label, f.red.dojo, f.red.marks, f.red.ippon, rawF, { pending: f.red.pending, pendingAny: pending, locked: pending, hantei: hantei('red') }),
-      sideBox('white', f.white.label, f.white.dojo, f.white.marks, f.white.ippon, rawF, { pending: f.white.pending, pendingAny: pending, locked: pending, hantei: hantei('white') })),
+      sideBox('red', f.red.label, f.red.dojo, f.red.marks, f.red.ippon, rawF, { pending: f.red.pending, pendingAny: pending, locked: pending || isDone, hantei: hantei('red') }),
+      sideBox('white', f.white.label, f.white.dojo, f.white.marks, f.white.ippon, rawF, { pending: f.white.pending, pendingAny: pending, locked: pending || isDone, hantei: hantei('white') })),
     statusLine(c, f, st, false),
+    isDone ? lockedNote('This fight') : null,
     el('div', { class: 'actions' },
       rawF.done === true || rawF.done === 'TRUE'
         ? el('button', { class: 'btn', onclick: () => patchRow(f.row, { done: false, hantei: '' }) }, 'Reopen fight')
@@ -1177,7 +1180,7 @@ function teamPanel(c, st, f) {
       const used = list.filter(y => y.row !== x.row).map(y => String(rawRow(c, y.row)[side] || '')).filter(Boolean);
       const opts = [''].concat((f[side].members || []).filter(m => m === cur || !used.includes(m)));
       if (cur && !opts.includes(cur)) opts.push(cur);
-      return el('select', { class: 'cell', 'aria-label': f[side].label + ' ' + x.pos, onchange: e => patchRow(x.row, { [side]: e.target.value }) },
+      return el('select', { class: 'cell', disabled: !!x.done, 'aria-label': f[side].label + ' ' + x.pos, onchange: e => patchRow(x.row, { [side]: e.target.value }) },
         opts.map(n => el('option', Object.assign({ value: n }, n === cur ? { selected: true } : {}), n || 'Pick fighter')));
     };
     const state = side => el('span', { class: 'pill ' + (ord[side] ? 'done' : 'lvl') }, ord[side] ? 'Order in' : 'Waiting');
@@ -1196,7 +1199,7 @@ function teamPanel(c, st, f) {
       const team = f[side];
       const cur = String(rawB[side] || '');
       const opts = [''].concat(team.members || []); if (cur && !opts.includes(cur)) opts.push(cur);
-      return el('select', { 'aria-label': (side === 'red' ? 'Red' : 'White') + ' fighter', onchange: e => patchRow(b.row, { [side]: e.target.value }) }, opts.map(n => el('option', Object.assign({ value: n }, n === cur ? { selected: true } : {}), n || 'Pick fighter')));
+      return el('select', { disabled: bDone, 'aria-label': (side === 'red' ? 'Red' : 'White') + ' fighter', onchange: e => patchRow(b.row, { [side]: e.target.value }) }, opts.map(n => el('option', Object.assign({ value: n }, n === cur ? { selected: true } : {}), n || 'Pick fighter')));
     };
     const bb = bouts.find(x => x.row === b.row) || b;
     const bDone = rawB.done === true || rawB.done === 'TRUE';
@@ -1204,10 +1207,11 @@ function teamPanel(c, st, f) {
     panel = el('div', { style: 'margin-top:14px' },
       el('div', { class: 'fhead' }, el('b', {}, bb.extra ? 'Daihyosen' : bb.pos), el('span', { class: 'note' }, bb.extra ? 'Each team picks one fighter. First ippon wins.' : '')),
       el('div', { class: 'sides' },
-        sideBox('red', '', f.red.label, bb.red.marks, bb.red.ippon, rawB, { nameSelect: memberSelect('red'), hantei: exHantei('Red') }),
-        sideBox('white', '', f.white.label, bb.white.marks, bb.white.ippon, rawB, { nameSelect: memberSelect('white'), hantei: exHantei('White') })),
+        sideBox('red', '', f.red.label, bb.red.marks, bb.red.ippon, rawB, { nameSelect: memberSelect('red'), locked: bDone, hantei: exHantei('Red') }),
+        sideBox('white', '', f.white.label, bb.white.marks, bb.white.ippon, rawB, { nameSelect: memberSelect('white'), locked: bDone, hantei: exHantei('White') })),
       bb.extra && !(rawB.red && rawB.white) ? el('div', { class: 'alert' }, 'Pick each team\'s fighter for the daihyosen above. The board shows it once both are picked.') : null,
       statusLine(c, bb, comp, true),
+      bDone ? lockedNote('This fight') : null,
       el('div', { class: 'actions' },
         rawB.done === true || rawB.done === 'TRUE'
           ? el('button', { class: 'btn', onclick: () => patchRow(b.row, { done: false, hantei: '' }) }, 'Reopen fight')
@@ -1216,7 +1220,7 @@ function teamPanel(c, st, f) {
   const s = f.scores || { red: 0, white: 0 };
   return el('div', { class: 'card' },
     el('div', { class: 'fhead' }, el('span', { class: 'big' }, '#' + f.order), el('span', { class: 'muted' }, [f.code, f.stage, st.courts > 1 ? 'Court ' + f.court : ''].filter(Boolean).join(' · '))),
-    shinpanPicker(f, head),
+    shinpanPicker(f, head, f.done),
     el('div', { class: 'tsum' },
       el('div', { class: 't r' }, f.red.label),
       el('div', { class: 'mid' }, el('b', {}, s.red + ' – ' + s.white), 'points · fights ' + f.wins.red + '–' + f.wins.white + ' · ippon ' + f.red.ippon + '–' + f.white.ippon),
@@ -1229,8 +1233,8 @@ function teamPanel(c, st, f) {
     panel,
     ord.both && !started && !showOrders && !f.forfeit ? el('div', { class: 'row', style: 'margin-top:10px' }, el('button', { class: 'btn', onclick: () => { S.editOrders = f.row; render(); } }, 'Change fighting orders')) : null,
     el('div', { class: 'row', style: 'margin-top:14px' }, el('span', { class: 'note' }, 'Whole team forfeits:'),
-      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!head._rF, onchange: e => patchRow(f.row, { rF: e.target.checked }) }), f.red.label),
-      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!head._wF, onchange: e => patchRow(f.row, { wF: e.target.checked }) }), f.white.label)));
+      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!head._rF, disabled: f.done && !f.forfeit, onchange: e => patchRow(f.row, { rF: e.target.checked }) }), f.red.label),
+      el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: !!head._wF, disabled: f.done && !f.forfeit, onchange: e => patchRow(f.row, { wF: e.target.checked }) }), f.white.label)));
 }
 
 /* ----- Pools tab ----- */
