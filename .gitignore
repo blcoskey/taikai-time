@@ -1,0 +1,4 @@
+# clasp: credentials and the per-machine project link are never committed
+.clasprc.json
+apps-script/.clasp.json
+apps-script/appsscript.json
