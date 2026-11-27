@@ -426,7 +426,7 @@ function shiaiCompute(raw) {
     });
     var rows = members.map(function (name) {
       var fr = byName[shiaiKey(name)];
-      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poIpp: 0 };
+      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poL: 0, poF: 0, poIpp: 0 };
     });
     var row = function (n) { return rows.filter(function (r) { return shiaiKey(r.name) === shiaiKey(n); })[0]; };
     var main = pf.filter(function (f) { return !f.playoff; });
@@ -440,8 +440,8 @@ function shiaiCompute(raw) {
     pf.filter(function (f) { return f.playoff; }).forEach(function (f) {
       var o = outcome(f); if (!o) return;
       var r = row(f.redTyped), w = row(f.whiteTyped); if (!r || !w) return;
-      r.poIpp += f.rIpp; w.poIpp += f.wIpp;
-      if (o === 'red') r.poW++; else if (o === 'white') w.poW++;
+      r.poIpp += f.rIpp; w.poIpp += f.wIpp; r.poF++; w.poF++;
+      if (o === 'red') { r.poW++; w.poL++; } else if (o === 'white') { w.poW++; r.poL++; }
     });
     // Individual: 3 a win, 2 a draw, 1 per ippon. Teams: the bout points of every match added up.
     rows.forEach(function (r) { r.points = st.type === 'team' ? (r.score || 0) : r.w * st.winPts + r.d * st.drawPts + r.ipp * st.ipponPts; });
@@ -464,7 +464,7 @@ function shiaiCompute(raw) {
       pool: p, complete: complete, played: main.filter(function (f) { return outcome(f); }).length, total: main.length,
       // Not while play-off fights for this pool are still to be fought: they may settle it.
       playoffNeeded: complete && tiedNames.length > 0 && !pf.some(function (f) { return f.playoff && !outcome(f); }), tiedNames: tiedNames,
-      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought, w: r.w, d: r.d, l: r.l, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
+      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought + r.poF, w: r.w + r.poW, d: r.d, l: r.l + r.poL, playoffW: r.poW, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
     };
   });
   var poolBy = {};
@@ -502,8 +502,17 @@ function shiaiCompute(raw) {
   // Now / next per court: the first fights not yet done.
   var courts = {};
   fights.forEach(function (f) { courts[f.court] = true; });
+  // A finished pool with a deciding tie and no play-off fights yet: its play-off is what comes next
+  // on that court, so the board holds a "waiting for play-off" card there instead.
+  var waiting = pools.filter(function (p) { return p.playoffNeeded; }).map(function (p) {
+    var pf = fights.filter(function (f) { return f.pool === p.pool; });
+    var lastF = pf[pf.length - 1];
+    return { pool: p.pool, names: p.tiedNames, court: lastF ? lastF.court : 1, after: lastF ? lastF.order : 0, status: 'later' };
+  });
   Object.keys(courts).forEach(function (c) {
     var left = fights.filter(function (f) { return String(f.court) === c && !f.done; });
+    var w = waiting.filter(function (x) { return String(x.court) === c && (!left[0] || left[0].order > x.after); })[0];
+    if (w) { w.status = 'now'; if (left[0]) left[0].status = 'next'; return; }
     if (left[0]) left[0].status = 'now';
     if (left[1]) left[1].status = 'next';
   });
@@ -554,6 +563,7 @@ function shiaiCompute(raw) {
       };
     }),
     pools: pools,
+    waiting: waiting,
     results: results,
     spirit: spirit,
   };
@@ -1025,29 +1035,37 @@ function doPlayoffs_() {
     var isHead = function (r) { return !L.team || String(r[L.bout - 1]).trim().toLowerCase() === 'team'; };
     var members = {};
     entrants_(comp, entryRows).forEach(function (t) { members[shiaiKey(t.name)] = t.members || []; });
+    var changed = false;
     state.pools.forEach(function (p) {
       if (!p.playoffNeeded) return;
       var existing = rows.filter(function (r) { return isHead(r) && String(r[L.pool - 1]).toUpperCase() === p.pool && /-PO\d+$/i.test(r[L.code - 1]); }).length;
       var places = {};
       p.rows.filter(function (r) { return r.tied; }).forEach(function (r) { (places[r.place] = places[r.place] || []).push(r.name); });
+      // Insert after the last row that belongs to this pool (for teams, after that match's bouts).
+      var last = -1, court = 1;
+      rows.forEach(function (r, i) { if (isHead(r) && String(r[L.pool - 1]).toUpperCase() === p.pool) { last = i; court = r[L.court - 1] || 1; } });
+      while (L.team && last + 1 < rows.length && !isHead(rows[last + 1])) last++;
+      var newRows = [];
       Object.keys(places).forEach(function (pl) {
         var names = places[pl];
         shiaiRoundRobin(names.length).forEach(function (pair) {
-          // Insert after the last row that belongs to this pool (for teams, after that match's bouts).
-          var last = -1, court = 1;
-          rows.forEach(function (r, i) { if (isHead(r) && String(r[L.pool - 1]).toUpperCase() === p.pool) { last = i; court = r[L.court - 1] || 1; } });
-          while (L.team && last + 1 < rows.length && !isHead(rows[last + 1])) last++;
           existing++;
           var m = { code: p.pool + '-PO' + existing, stage: 'Pool ' + p.pool + ' play-off', court: court, red: names[pair[0] - 1], white: names[pair[1] - 1], pool: p.pool };
-          var newRows = (L.team ? shiaiTeamRows([m], comp.settings, members) : [m]).map(function (f) { return blankRow_(L, f); });
-          sh.insertRowsAfter(last + 2, newRows.length);
-          sh.getRange(last + 3, 1, newRows.length, L.n).setValues(newRows);
-          Array.prototype.splice.apply(rows, [last + 1, 0].concat(newRows));
+          newRows = newRows.concat((L.team ? shiaiTeamRows([m], comp.settings, members) : [m]).map(function (f) { return blankRow_(L, f); }));
           added++;
         });
       });
+      if (!newRows.length) return;
+      // One insert and three writes for the whole block. New rows take the formatting of the row above.
+      sh.insertRowsAfter(last + 2, newRows.length);
+      sh.getRange(last + 3, 1, newRows.length, L.n).setValues(newRows);
+      var fx = fightFormulas_(L, newRows);
+      sh.getRange(last + 3, L.rIpp, newRows.length, 2).setFormulasR1C1(fx.map(function (f) { return f ? [f[0], f[1]] : ['', '']; }));
+      sh.getRange(last + 3, L.winner, newRows.length, 1).setFormulasR1C1(fx.map(function (f) { return [f ? f[2] : '']; }));
+      Array.prototype.splice.apply(rows, [last + 1, 0].concat(newRows));
+      changed = true;
     });
-    if (added) { formatFights_(sh, comp); rotateShinpan_(comp); refreshComp_(comp); }
+    if (changed) { rotateShinpan_(comp); refreshComp_(comp); }
   });
   return added;
 }
@@ -1263,6 +1281,34 @@ function writeStandings_(comp, state) {
   }
 }
 
+// R1C1 formulas for the Red ippon, White ippon and Result cells of each row (null for Team rows).
+function fightFormulas_(L, vals) {
+  var rc = function (c) { return 'RC' + c; };
+  var ipp = function (own, opp) {
+    var o = rc(own) + ':' + rc(own + L.nm - 1), x = rc(opp) + ':' + rc(opp + L.nm - 1);
+    return 'SUMPRODUCT(COUNTIF(' + o + ',{"M","K","D","T"}))+MAX(COUNTIF(' + o + ',"H"),INT(COUNTIF(' + x + ',"∆")/2))';
+  };
+  // A forfeit credits the winner with two ippon; both forfeiting scores nothing.
+  var credit = function (mine, theirs, expr) { return 'IF(' + rc(mine) + '=TRUE,0,IF(' + rc(theirs) + '=TRUE,' + SHIAI_DEFAULTS.forfeitIppon + ',' + expr + '))'; };
+  var fR = '=IF(' + rc(L.red) + '&' + rc(L.white) + '="","",' + credit(L.rF, L.wF, ipp(L.rm, L.wm)) + ')';
+  var fW = '=IF(' + rc(L.red) + '&' + rc(L.white) + '="","",' + credit(L.wF, L.rF, ipp(L.wm, L.rm)) + ')';
+  var redName = L.team ? 'IF(' + rc(L.red) + '="","Red",' + rc(L.red) + ')' : rc(L.red);
+  var whiteName = L.team ? 'IF(' + rc(L.white) + '="","White",' + rc(L.white) + ')' : rc(L.white);
+  // Level knockout fights, pool play-offs and the daihyosen go to encho instead of a draw.
+  var winF = function (mustWin) {
+    return '=IF(AND(' + rc(L.rF) + '=TRUE,' + rc(L.wF) + '=TRUE),"Draw",IF(' + rc(L.rF) + '=TRUE,' + whiteName + ',IF(' + rc(L.wF) + '=TRUE,' + redName + ',IF(' + rc(L.done) + '<>TRUE,"",IF(' + rc(L.hantei) + '="Red",' + redName + ',IF(' + rc(L.hantei) + '="White",' + whiteName + ',IF(' + rc(L.rIpp) + '>' + rc(L.wIpp) + ',' + redName + ',IF(' + rc(L.wIpp) + '>' + rc(L.rIpp) + ',' + whiteName + ',' + (mustWin ? '"Level: encho"' : '"Draw"') + '))))))))';
+  };
+  if (L.team) {
+    fR = '=IF(' + rc(L.bout) + '="","",' + credit(L.rF, L.wF, ipp(L.rm, L.wm)) + ')';
+    fW = '=IF(' + rc(L.bout) + '="","",' + credit(L.wF, L.rF, ipp(L.wm, L.rm)) + ')';
+  }
+  return vals.map(function (r) {
+    var head = L.team && String(r[L.bout - 1]).trim().toLowerCase() === 'team';
+    var mustWin = L.team ? SHIAI_PLAYOFF_RE.test(String(r[L.bout - 1]).trim()) : (!String(r[L.pool - 1]).trim() || /-PO\d*$/i.test(String(r[L.code - 1])));
+    return head ? null : [fR, fW, winF(mustWin)];
+  });
+}
+
 function formatFights_(sh, comp, known) {
   if (!sh) return;
   var L = layout_(comp.settings.type);
@@ -1298,30 +1344,7 @@ function formatFights_(sh, comp, known) {
   }
   // Bout formulas. Team rows are left for the script, which writes the match result there.
   var vals = known && known.length === n ? known : sh.getRange(2, 1, n, L.n).getValues();
-  var rc = function (c) { return 'RC' + c; };
-  var ipp = function (own, opp) {
-    var o = rc(own) + ':' + rc(own + L.nm - 1), x = rc(opp) + ':' + rc(opp + L.nm - 1);
-    return 'SUMPRODUCT(COUNTIF(' + o + ',{"M","K","D","T"}))+MAX(COUNTIF(' + o + ',"H"),INT(COUNTIF(' + x + ',"∆")/2))';
-  };
-  // A forfeit credits the winner with two ippon; both forfeiting scores nothing.
-  var credit = function (mine, theirs, expr) { return 'IF(' + rc(mine) + '=TRUE,0,IF(' + rc(theirs) + '=TRUE,' + SHIAI_DEFAULTS.forfeitIppon + ',' + expr + '))'; };
-  var fR = '=IF(' + rc(L.red) + '&' + rc(L.white) + '="","",' + credit(L.rF, L.wF, ipp(L.rm, L.wm)) + ')';
-  var fW = '=IF(' + rc(L.red) + '&' + rc(L.white) + '="","",' + credit(L.wF, L.rF, ipp(L.wm, L.rm)) + ')';
-  var redName = L.team ? 'IF(' + rc(L.red) + '="","Red",' + rc(L.red) + ')' : rc(L.red);
-  var whiteName = L.team ? 'IF(' + rc(L.white) + '="","White",' + rc(L.white) + ')' : rc(L.white);
-  // Level knockout fights, pool play-offs and the daihyosen go to encho instead of a draw.
-  var winF = function (mustWin) {
-    return '=IF(AND(' + rc(L.rF) + '=TRUE,' + rc(L.wF) + '=TRUE),"Draw",IF(' + rc(L.rF) + '=TRUE,' + whiteName + ',IF(' + rc(L.wF) + '=TRUE,' + redName + ',IF(' + rc(L.done) + '<>TRUE,"",IF(' + rc(L.hantei) + '="Red",' + redName + ',IF(' + rc(L.hantei) + '="White",' + whiteName + ',IF(' + rc(L.rIpp) + '>' + rc(L.wIpp) + ',' + redName + ',IF(' + rc(L.wIpp) + '>' + rc(L.rIpp) + ',' + whiteName + ',' + (mustWin ? '"Level: encho"' : '"Draw"') + '))))))))';
-  };
-  if (L.team) {
-    fR = '=IF(' + rc(L.bout) + '="","",' + credit(L.rF, L.wF, ipp(L.rm, L.wm)) + ')';
-    fW = '=IF(' + rc(L.bout) + '="","",' + credit(L.wF, L.rF, ipp(L.wm, L.rm)) + ')';
-  }
-  var formulas = vals.map(function (r) {
-    var head = L.team && String(r[L.bout - 1]).trim().toLowerCase() === 'team';
-    var mustWin = L.team ? SHIAI_PLAYOFF_RE.test(String(r[L.bout - 1]).trim()) : (!String(r[L.pool - 1]).trim() || /-PO\d*$/i.test(String(r[L.code - 1])));
-    return head ? null : [fR, fW, winF(mustWin)];
-  });
+  var formulas = fightFormulas_(L, vals);
   // Two writes for the whole tab. Team rows get blanks here; refreshing writes their results.
   sh.getRange(2, L.rIpp, n, 2).setFormulasR1C1(formulas.map(function (f) { return f ? [f[0], f[1]] : ['', '']; }));
   sh.getRange(2, L.winner, n, 1).setFormulasR1C1(formulas.map(function (f) { return [f ? f[2] : '']; }));

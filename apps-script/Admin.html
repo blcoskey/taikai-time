@@ -599,7 +599,7 @@ function shiaiCompute(raw) {
     });
     var rows = members.map(function (name) {
       var fr = byName[shiaiKey(name)];
-      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poIpp: 0 };
+      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poL: 0, poF: 0, poIpp: 0 };
     });
     var row = function (n) { return rows.filter(function (r) { return shiaiKey(r.name) === shiaiKey(n); })[0]; };
     var main = pf.filter(function (f) { return !f.playoff; });
@@ -613,8 +613,8 @@ function shiaiCompute(raw) {
     pf.filter(function (f) { return f.playoff; }).forEach(function (f) {
       var o = outcome(f); if (!o) return;
       var r = row(f.redTyped), w = row(f.whiteTyped); if (!r || !w) return;
-      r.poIpp += f.rIpp; w.poIpp += f.wIpp;
-      if (o === 'red') r.poW++; else if (o === 'white') w.poW++;
+      r.poIpp += f.rIpp; w.poIpp += f.wIpp; r.poF++; w.poF++;
+      if (o === 'red') { r.poW++; w.poL++; } else if (o === 'white') { w.poW++; r.poL++; }
     });
     // Individual: 3 a win, 2 a draw, 1 per ippon. Teams: the bout points of every match added up.
     rows.forEach(function (r) { r.points = st.type === 'team' ? (r.score || 0) : r.w * st.winPts + r.d * st.drawPts + r.ipp * st.ipponPts; });
@@ -637,7 +637,7 @@ function shiaiCompute(raw) {
       pool: p, complete: complete, played: main.filter(function (f) { return outcome(f); }).length, total: main.length,
       // Not while play-off fights for this pool are still to be fought: they may settle it.
       playoffNeeded: complete && tiedNames.length > 0 && !pf.some(function (f) { return f.playoff && !outcome(f); }), tiedNames: tiedNames,
-      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought, w: r.w, d: r.d, l: r.l, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
+      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought + r.poF, w: r.w + r.poW, d: r.d, l: r.l + r.poL, playoffW: r.poW, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
     };
   });
   var poolBy = {};
@@ -675,8 +675,17 @@ function shiaiCompute(raw) {
   // Now / next per court: the first fights not yet done.
   var courts = {};
   fights.forEach(function (f) { courts[f.court] = true; });
+  // A finished pool with a deciding tie and no play-off fights yet: its play-off is what comes next
+  // on that court, so the board holds a "waiting for play-off" card there instead.
+  var waiting = pools.filter(function (p) { return p.playoffNeeded; }).map(function (p) {
+    var pf = fights.filter(function (f) { return f.pool === p.pool; });
+    var lastF = pf[pf.length - 1];
+    return { pool: p.pool, names: p.tiedNames, court: lastF ? lastF.court : 1, after: lastF ? lastF.order : 0, status: 'later' };
+  });
   Object.keys(courts).forEach(function (c) {
     var left = fights.filter(function (f) { return String(f.court) === c && !f.done; });
+    var w = waiting.filter(function (x) { return String(x.court) === c && (!left[0] || left[0].order > x.after); })[0];
+    if (w) { w.status = 'now'; if (left[0]) left[0].status = 'next'; return; }
     if (left[0]) left[0].status = 'now';
     if (left[1]) left[1].status = 'next';
   });
@@ -727,6 +736,7 @@ function shiaiCompute(raw) {
       };
     }),
     pools: pools,
+    waiting: waiting,
     results: results,
     spirit: spirit,
   };

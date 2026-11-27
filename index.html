@@ -46,6 +46,7 @@
   .search { display: flex; gap: 8px; margin-top: 8px; }
   .search input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
   .search button { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .fight.waiting .wait { font-weight: 700; font-size: 16px; padding: 10px 0 4px; }
   .demo { background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 10px; margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .demo span { flex: 1; min-width: 160px; }
   .demo button { border: 0; background: var(--warn); color: var(--card); font: inherit; font-weight: 700; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
@@ -211,7 +212,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js?v=1795803209"></script>
+<script src="config.js?v=1795805074"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -649,7 +650,7 @@ function shiaiCompute(raw) {
     });
     var rows = members.map(function (name) {
       var fr = byName[shiaiKey(name)];
-      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poIpp: 0 };
+      return { name: name, dojo: fr ? fr.dojo : '', members: fr ? fr.members : [], fought: 0, w: 0, d: 0, l: 0, ipp: 0, against: 0, points: 0, poW: 0, poL: 0, poF: 0, poIpp: 0 };
     });
     var row = function (n) { return rows.filter(function (r) { return shiaiKey(r.name) === shiaiKey(n); })[0]; };
     var main = pf.filter(function (f) { return !f.playoff; });
@@ -663,8 +664,8 @@ function shiaiCompute(raw) {
     pf.filter(function (f) { return f.playoff; }).forEach(function (f) {
       var o = outcome(f); if (!o) return;
       var r = row(f.redTyped), w = row(f.whiteTyped); if (!r || !w) return;
-      r.poIpp += f.rIpp; w.poIpp += f.wIpp;
-      if (o === 'red') r.poW++; else if (o === 'white') w.poW++;
+      r.poIpp += f.rIpp; w.poIpp += f.wIpp; r.poF++; w.poF++;
+      if (o === 'red') { r.poW++; w.poL++; } else if (o === 'white') { w.poW++; r.poL++; }
     });
     // Individual: 3 a win, 2 a draw, 1 per ippon. Teams: the bout points of every match added up.
     rows.forEach(function (r) { r.points = st.type === 'team' ? (r.score || 0) : r.w * st.winPts + r.d * st.drawPts + r.ipp * st.ipponPts; });
@@ -687,7 +688,7 @@ function shiaiCompute(raw) {
       pool: p, complete: complete, played: main.filter(function (f) { return outcome(f); }).length, total: main.length,
       // Not while play-off fights for this pool are still to be fought: they may settle it.
       playoffNeeded: complete && tiedNames.length > 0 && !pf.some(function (f) { return f.playoff && !outcome(f); }), tiedNames: tiedNames,
-      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought, w: r.w, d: r.d, l: r.l, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
+      rows: rows.map(function (r) { return { place: r.place, name: r.name, dojo: r.dojo, members: r.members, fought: r.fought + r.poF, w: r.w + r.poW, d: r.d, l: r.l + r.poL, playoffW: r.poW, ipp: r.ipp, against: r.against, points: r.points, tied: complete && r.tied, qualified: r.qualified }; }),
     };
   });
   var poolBy = {};
@@ -725,8 +726,17 @@ function shiaiCompute(raw) {
   // Now / next per court: the first fights not yet done.
   var courts = {};
   fights.forEach(function (f) { courts[f.court] = true; });
+  // A finished pool with a deciding tie and no play-off fights yet: its play-off is what comes next
+  // on that court, so the board holds a "waiting for play-off" card there instead.
+  var waiting = pools.filter(function (p) { return p.playoffNeeded; }).map(function (p) {
+    var pf = fights.filter(function (f) { return f.pool === p.pool; });
+    var lastF = pf[pf.length - 1];
+    return { pool: p.pool, names: p.tiedNames, court: lastF ? lastF.court : 1, after: lastF ? lastF.order : 0, status: 'later' };
+  });
   Object.keys(courts).forEach(function (c) {
     var left = fights.filter(function (f) { return String(f.court) === c && !f.done; });
+    var w = waiting.filter(function (x) { return String(x.court) === c && (!left[0] || left[0].order > x.after); })[0];
+    if (w) { w.status = 'now'; if (left[0]) left[0].status = 'next'; return; }
     if (left[0]) left[0].status = 'now';
     if (left[1]) left[1].status = 'next';
   });
@@ -777,6 +787,7 @@ function shiaiCompute(raw) {
       };
     }),
     pools: pools,
+    waiting: waiting,
     results: results,
     spirit: spirit,
   };
@@ -936,6 +947,9 @@ function setComp(name) {
 }
 function scrollToNow() {
   if (S.tab !== 'fights' || S.q || !S.data) return;
+  const w = (S.data.waiting || []).find(x => x.status === 'now');
+  const wc = w && document.getElementById('w-' + w.pool);
+  if (wc) { wc.scrollIntoView({ block: 'start' }); return; }
   const f = S.data.fights.find(x => x.status === 'now');
   const c = f && document.getElementById('f-' + f.order);
   if (c && f.order > 1) c.scrollIntoView({ block: 'start' });
@@ -1033,6 +1047,17 @@ function fightCard(f, big) {
       f.shinpan.length > 1 ? el('div', {}, el('b', {}, 'Fukushin '), f.shinpan.slice(1).join(', ')) : null) : null);
 }
 
+// A pool needs a play-off that the table hasn't made yet: hold its place in the order.
+function waitCard(w) {
+  const names = w.names.length > 1 ? w.names.slice(0, -1).join(', ') + ' and ' + w.names[w.names.length - 1] : w.names.join('');
+  return el('div', { id: 'w-' + w.pool, class: 'card fight waiting' + (w.status === 'now' ? ' isnow' : '') },
+    el('div', { class: 'fhead' },
+      el('span', { class: 'grow' }, ['Pool ' + w.pool + ' play-off', S.data.courts > 1 ? 'Court ' + w.court : ''].filter(Boolean).join(' · ')),
+      w.status === 'now' ? el('span', { class: 'pill now' }, 'Next') : null),
+    el('div', { class: 'wait' }, 'Waiting for play-off matches to be generated.'),
+    el('div', { class: 'fnote' }, names + ' are tied.'));
+}
+
 function focusCard() {
   const d = S.data, q = norm(S.q);
   const people = d.fighters.filter(f => norm(f.name).includes(q) || (f.members || []).some(m => norm(m).includes(q)));
@@ -1079,7 +1104,7 @@ function stageSections(fights, nameOf) {
     const done = g.list.filter(f => f.done).length;
     return el('section', { class: 'stage' },
       el('div', { class: 'stagehead' }, el('b', {}, g.name), el('span', {}, done === g.list.length ? 'All ' + g.list.length + ' done' : done + ' of ' + g.list.length + ' done')),
-      g.list.map(f => fightCard(f, false)));
+      g.list.map(f => [fightCard(f, false), (S.data.waiting || []).filter(w => w.after === f.order).map(waitCard)]));
   }));
 }
 
