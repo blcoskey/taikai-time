@@ -906,6 +906,18 @@ function generateDraw_(idx) {
   ui.alert('Draw ready', comp.name + ': ' + n + (L.team ? ' team matches' : ' fights') + ' on the "' + fightsTab_(comp) + '" tab.', ui.ButtonSet.OK);
 }
 
+// With no record of the pool size used last time: the pools are stale when they don't match the
+// number or size of pools a fresh draw would make (for example 2 pools of 3 after asking for 5).
+function poolsStale_(entrants, settings) {
+  var have = {};
+  entrants.forEach(function (e) { if (shiaiClean(e.pool)) have[shiaiClean(e.pool).toUpperCase()] = (have[shiaiClean(e.pool).toUpperCase()] || 0) + 1; });
+  var letters = Object.keys(have);
+  if (!letters.length) return false;
+  var fresh = {};
+  shiaiAssignPools(entrants.map(function (e) { return Object.assign({}, e, { pool: '' }); }), settings.poolSize).forEach(function (f) { fresh[f.pool] = (fresh[f.pool] || 0) + 1; });
+  var size = Math.max(2, Number(settings.poolSize) || 3);
+  return Object.keys(fresh).length !== letters.length || letters.some(function (l) { return have[l] > size; });
+}
 // Makes a competition's draw from its Entries and writes the Fights tab. Returns the number of matches.
 function doDraw_(comp) {
   setupSheets_();
@@ -914,7 +926,17 @@ function doDraw_(comp) {
   var entrants = entrants_(comp, entryRows);
   if (entrants.length < 2) throw new Error('Add at least two ' + (L.team ? 'teams' : 'fighters') + ' for ' + comp.name + ' first.');
 
+  // Pools typed on the Entries tab are kept, unless the pool size changed since they were made:
+  // then the draw makes fresh pools, however the setting was changed (admin app or the sheet).
+  var props = PropertiesService.getDocumentProperties(), sizeKey = 'poolSize|' + comp.name;
+  var size = String(comp.settings.poolSize), was = props.getProperty(sizeKey);
+  var stale = was !== null ? was !== size : poolsStale_(entrants, comp.settings);
+  if (stale) {
+    entrants = entrants.map(function (e) { return Object.assign({}, e, { pool: '' }); });
+    entryRows = entryRows.map(function (r) { return shiaiKey(r[0]) === shiaiKey(comp.name) ? r.slice(0, 4).concat([''], r.slice(5)) : r; });
+  }
   var draw = shiaiBuildDraw(entrants, comp.settings);
+  props.setProperty(sizeKey, size);
   // Write pools back to the Entries tab.
   var poolOf = {};
   draw.fighters.forEach(function (f) { poolOf[shiaiKey(f.name)] = f.pool; });
