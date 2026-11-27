@@ -188,7 +188,6 @@
 </head>
 <body>
 <div class="wrap">
-  <div id="demo" class="demo hidden"><span>Demo: this year's draw from the sheet, with made-up scores when you tap Play. Connect your Google Sheet to go live.</span><button id="demoNext" type="button">Play next fight</button><button id="demoReset" type="button" class="ghost">Reset</button></div>
   <header>
     <div class="toprow">
       <h1 id="title">Shiai</h1>
@@ -212,7 +211,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js"></script>
+<script src="config.js?v=1795798801"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -836,86 +835,11 @@ function sheetSource(id) {
   };
 }
 
-/* Demo: a made-up tournament run through the same draw and scoring code the sheet uses. */
-const DEMO_KEY = 'shiai_demo_v6';
-const DEMO_SHINPAN = ['Divana Aura Naidoo', 'Kadima Tshiantaku Kazadi', 'Alexander Kent', 'Brendan Dateling', 'Mitchell Kyle', 'Wendy Kyle', 'Warren Ho', 'Terry Chau', 'Michael Grice', 'Logann Naidoo', 'Damian Rogans', 'Brandon-lee Coskey'];
-// Demo of the SAKF Junior Nationals 2026 draw: this year's players, pools and fights from the sheet.
-// Nothing is scored yet; "Play next fight" scores the next fight with a made-up result.
-const E = list => list.map(([name, pool, dojo]) => ({ name, pool, dojo }));
-const DEMO_COMPS = [
-  { name: 'Kids', settings: { type: 'Individual', courts: 1, poolSize: 3, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1 },
-    entries: E([['Dereck Tshimanga', 'A', 'Shi Hoko'], ['Hemerick FRANCIS', 'A', 'Ryu Ken Chi'], ['Oluwatimilaya Anna Abiola', 'A', 'San Kawa'], ['Marcus Lin', 'B', 'Ryu Ken Chi'], ['Razeen Jogee', 'B', 'San Kawa']]) },
-  { name: 'Juniors', settings: { type: 'Individual', courts: 1, poolSize: 3, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1 },
-    entries: E([['Reynier van der Vyver', 'A', 'San Kawa'], ['Lisy Rasoamahenina', 'B', 'Wakaba/RKC'], ['Arabella Lark Van Rooyen', 'A', 'Ryu Ken Chi'], ['Dylan Buckley', 'A', 'Shi Hoko'], ['Michael kalambi', 'B', 'Shi Hoko'], ['Ethan hai tian cui', 'B', 'Ryu Ken Chi']]) },
-  { name: 'Teams', settings: { type: 'Team', teamSize: 3, courts: 1, poolSize: 2, qualify: 2, winPts: 3, drawPts: 2, ipponPts: 1 }, entries: [] },
-];
-// A made-up kendo result: up to two ippon each, first to two wins. Knockout fights can't end level.
-function demoResult(ko) {
-  const pick = () => 'MMMKKDT'[Math.floor(Math.random() * 7)];
-  const rm = [], wm = [];
-  const n = Math.floor(Math.random() * 4);
-  for (let i = 0; i < n && rm.length < 2 && wm.length < 2; i++) (Math.random() < 0.5 ? rm : wm).push(pick());
-  if (Math.random() < 0.15) (Math.random() < 0.5 ? rm : wm).push('∆');
-  const ipp = (o, x) => o.filter(m => m !== '∆').length + Math.floor(x.filter(m => m === '∆').length / 2);
-  if (ko && ipp(rm, wm) === ipp(wm, rm)) (Math.random() < 0.5 ? rm : wm).push(pick());
-  return { rm, wm };
-}
-function demoSource() {
-  let db = null;
-  const C = name => DEMO_COMPS.find(c => c.name === name);
-  const isTeam = def => /team/i.test(def.settings.type);
-  // Shinpan rotate as on the sheet: one swaps every two matches, carrying on from one competition to the next.
-  let block = 0;
-  function freshComp(def) {
-    const draw = shiaiBuildDraw(def.entries, def.settings);
-    const members = {}; def.entries.forEach(e => { members[shiaiKey(e.name)] = e.members || []; });
-    let j = -1;
-    const start = block;
-    const rows = (isTeam(def) ? shiaiTeamRows(draw.fights, def.settings, members) : draw.fights)
-      .map(f => { const head = !f.bout || f.bout === 'Team'; if (head) j++;
-        return Object.assign({}, f, { rm: [], wm: [], decision: '', done: false, shinpan: head ? shiaiShinpanFor(DEMO_SHINPAN, start + Math.floor(j / SHIAI_MATCHES_PER_ROTATION)) : [] }); });
-    block += Math.ceil((j + 1) / SHIAI_MATCHES_PER_ROTATION);
-    const c = { fighters: draw.fighters.map(f => Object.assign({}, f, { members: members[shiaiKey(f.name)] || [] })), rows };
-    for (let i = 0; i < (def.start || 0); i++) playNext(def.name, c);
-    return c;
-  }
-  function load() {
-    if (db) return db;
-    try { const raw = localStorage.getItem(DEMO_KEY); if (raw) { db = JSON.parse(raw); return db; } } catch (e) {}
-    block = 0; db = {}; DEMO_COMPS.forEach(def => { db[def.name] = freshComp(def); });
-    return db;
-  }
-  function save() { try { localStorage.setItem(DEMO_KEY, JSON.stringify(db)); } catch (e) {} }
-  const compute = (name, c) => {
-    return shiaiCompute({ settings: C(name).settings, fighters: c.fighters, fights: c.rows, spirit: [] });
-  };
-  function playNext(name, c) {
-    const def = C(name);
-    const next = compute(name, c).fights.find(f => !f.done && !f.red.pending && !f.white.pending);
-    if (!next) return false;
-    if (isTeam(def)) {
-      c.rows.filter(r => r.code === next.code && r.bout !== 'Team' && r.bout !== SHIAI_PLAYOFF_BOUT)
-        .forEach(r => Object.assign(r, demoResult(false), { done: true }));
-    } else Object.assign(c.rows.find(x => x.code === next.code), demoResult(!!next.ko), { done: true });
-    return true;
-  }
-  return {
-    get: () => new Promise(r => setTimeout(() => {
-      load();
-      r({ ok: true, event: 'SAKF Junior Nationals 2026 (demo)', updated: new Date().toISOString(), competitions: DEMO_COMPS.map(def => Object.assign(compute(def.name, db[def.name]), { name: def.name })) });
-    }, 120)),
-    next: name => { load(); const ok = playNext(name, db[name]); save(); return ok; },
-    reset: () => { try { localStorage.removeItem(DEMO_KEY); } catch (e) {} db = null; load(); save(); },
-  };
-}
-
 const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
 // The live site sets SHIAI_LIVE: it only ever shows the sheet, never the demo.
 const LIVE_ONLY = typeof window !== 'undefined' && window.SHIAI_LIVE === true;
-const DEMO = !IN_APPS_SCRIPT && !SHEET_ID && !LIVE_ONLY;
-const demo = DEMO ? demoSource() : null;
-const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : DEMO ? demo.get
-  : SHEET_ID ? sheetSource(SHEET_ID) : () => Promise.reject(new Error('The board is not connected to the sheet yet. Add the sheet link to config.js.'));
+const DEMO = false;
+const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : SHEET_ID ? sheetSource(SHEET_ID) : () => Promise.reject(new Error('The board is not connected to the sheet yet. Add the sheet link to config.js.'));
 
 /* ---------------- Helpers ---------------- */
 function lsGet(k) { try { return localStorage.getItem('shiai_' + k) || ''; } catch (e) { return ''; } }
@@ -989,7 +913,6 @@ function renderComps() {
 const view = document.getElementById('view');
 function render() {
   for (const t of ['fights', 'pools', 'ko']) document.getElementById('tab-' + t).setAttribute('aria-selected', S.tab === t);
-  document.getElementById('demo').classList.toggle('hidden', !DEMO);
   document.getElementById('clear').classList.toggle('hidden', !S.q);
   const d = S.data;
   if (!d) { view.replaceChildren(el('div', { class: 'card empty' }, 'Loading…')); return; }
@@ -1221,10 +1144,6 @@ const qIn = document.getElementById('q');
 qIn.value = S.q;
 qIn.oninput = () => { S.q = qIn.value.trim(); render(); };
 document.getElementById('clear').onclick = () => { S.q = ''; qIn.value = ''; render(); };
-if (DEMO) {
-  document.getElementById('demoNext').onclick = () => { if (!demo.next(S.comp)) toast(S.comp === 'Teams' ? 'Teams are picked on the day, so there are no team fights yet.' : 'That\'s every ' + S.comp + ' fight. Tap Reset to start again.'); refresh(true); };
-  document.getElementById('demoReset').onclick = () => { demo.reset(); refresh(true); toast('Demo reset.'); };
-}
 function applyTheme(t) { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); }
 applyTheme(lsGet('theme'));
 document.getElementById('theme').onclick = () => {
