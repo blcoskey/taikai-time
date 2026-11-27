@@ -700,6 +700,7 @@ function onOpen() {
   var comps = [];
   try { comps = readComps_(); } catch (e) {}
   orderTabs_();
+  boardOrderOnce_();
   comps.slice(0, MAX_COMPS).forEach(function (c, i) { draw.addItem(c.name, 'drawComp' + (i + 1)); });
   if (!comps.length) draw.addItem('Add competitions on the Competitions tab first', 'setupSheets');
   ui.createMenu('Shiai')
@@ -1482,7 +1483,18 @@ function adminData_() {
   });
 }
 
-function adminLoad() { return reading_(adminData_); }
+function adminLoad() { boardOrderOnce_(); return reading_(adminData_); }
+// After the switch to Kids, Teams, Juniors, republish the board once so it lists them in that order
+// straight away instead of waiting for the next score.
+function boardOrderOnce_() {
+  try {
+    var p = PropertiesService.getDocumentProperties();
+    if (p.getProperty('order|board')) return;
+    readComps_();
+    publishBoard_();
+    p.setProperty('order|board', '1');
+  } catch (e) {}
+}
 
 // patch: { rm:[], wm:[], rF, wF, done, hantei:'Red'|'White'|'', shinpan:[3], red, white }
 // One save from the admin app. Kept for older pages; new pages send batches to adminSaveMany.
