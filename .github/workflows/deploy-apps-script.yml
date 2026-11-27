@@ -1,0 +1,65 @@
+name: Deploy admin app
+
+# Pushes apps-script/ to the Apps Script project and updates the existing
+# web app deployment in place, so the /exec link never changes.
+on:
+  push:
+    branches: [main]
+    paths: ['apps-script/**', '.github/workflows/deploy-apps-script.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-apps-script
+  cancel-in-progress: false
+
+env:
+  # The current admin /exec link: https://script.google.com/macros/s/<this>/exec
+  DEPLOYMENT_ID: AKfycbyJ55ecQb-S5zAm9hu0WXf0BKWyNF9k2Z5vubLnbf-RxnqjPHi3qt-sCVpZ0stfPneicg
+  CLASP: npx --yes @google/clasp@2.4.2
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Write clasp credentials (never committed)
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ]; then
+            echo "::error::Add the CLASPRC_JSON and SCRIPT_ID repository secrets first (see README)."
+            exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          chmod 600 ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"."}\n' "$SCRIPT_ID" > apps-script/.clasp.json
+
+      - name: Keep the project's own settings file
+        # appsscript.json holds the time zone, scopes and the web app's
+        # "Only myself" access. Copy it from the live project so a push never changes it.
+        run: |
+          mkdir -p /tmp/live && cp apps-script/.clasp.json /tmp/live/
+          (cd /tmp/live && $CLASP pull)
+          cp /tmp/live/appsscript.json apps-script/appsscript.json
+          cat apps-script/appsscript.json
+
+      - name: Push code
+        working-directory: apps-script
+        run: $CLASP push --force
+
+      - name: Update the web app deployment (same /exec link)
+        working-directory: apps-script
+        run: |
+          $CLASP deploy --deploymentId "$DEPLOYMENT_ID" \
+            --description "GitHub ${GITHUB_SHA::7}"
+          $CLASP deployments
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f ~/.clasprc.json apps-script/.clasp.json
