@@ -648,7 +648,7 @@ function shiaiPoolPanel(state) {
 
 /* ===================== SHEET SIDE =====================
    Tabs:
-     Competitions      - one column per competition (Kids, Juniors, Teams...) with its settings
+     Competitions      - one column per competition (Kids, Teams, Juniors...) with its settings
      Entries           - one row per fighter: Competition, Name, Dojo, Grade, Pool, Team (team events only), Age (for your reference)
      Shinpan           - referees, for the dropdowns
      Fighting Spirit   - votes, per competition
@@ -754,8 +754,8 @@ function setupSheets_() {
   if (!c) {
     c = ss.insertSheet(TAB.comps, 0);
     c.getRange(1, 1, 1, 2).setValues([['Event name', 'Shiai']]).setFontWeight('bold');
-    c.getRange(3, 1, 1, 4).setValues([['Setting', 'Kids', 'Juniors', 'Teams']]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff');
-    c.getRange(4, 1, COMP_SETTINGS.length, 4).setValues(COMP_SETTINGS.map(function (r) { return [r[0], r[2], r[2], r[1] === 'type' ? 'Team' : r[2]]; }));
+    c.getRange(3, 1, 1, 4).setValues([['Setting', 'Kids', 'Teams', 'Juniors']]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff');
+    c.getRange(4, 1, COMP_SETTINGS.length, 4).setValues(COMP_SETTINGS.map(function (r) { return [r[0], r[2], r[1] === 'type' ? 'Team' : r[2], r[2]]; }));
     c.setColumnWidth(1, 240);
   }
   makeTab_(TAB.entries, ['Competition', 'Name', 'Dojo', 'Grade', 'Pool', 'Team', 'Age'], [120, 220, 160, 70, 60, 140, 50]);
@@ -852,6 +852,21 @@ function readCompsNow_() {
   keyOf['bouts per team match'] = 'teamSize';
   // Kendo says fight, not bout: rename the old label on the sheet the first time it is seen.
   for (var b = h + 1; b < v.length; b++) if (/^bouts per team match$/i.test(String(v[b][0]).trim())) { sh.getRange(b + 1, 1).setValue('Fights per team match'); v[b][0] = 'Fights per team match'; }
+  // The day runs Kids, Teams, Juniors: move Teams before Juniors once on a sheet set up the old way.
+  var props = PropertiesService.getDocumentProperties();
+  if (!props.getProperty('order|kids-teams-juniors')) {
+    var names = v[h].map(function (x) { return String(x).trim().toLowerCase(); });
+    var jc = names.indexOf('juniors'), tc = names.indexOf('teams');
+    props.setProperty('order|kids-teams-juniors', '1');
+    if (jc > 0 && tc > jc && typeof sh.moveColumns === 'function') {
+      try {
+        var col = colLetter_(tc + 1);
+        sh.moveColumns(sh.getRange(col + ':' + col), jc + 1);
+        v = sh.getRange(1, 1, sh.getLastRow(), Math.max(2, sh.getLastColumn())).getValues();
+        timingRows_();
+      } catch (e) {}
+    }
+  }
   var comps = [];
   for (var c = 1; c < v[h].length; c++) {
     var name = String(v[h][c]).trim();
