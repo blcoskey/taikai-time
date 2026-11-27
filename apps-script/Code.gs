@@ -920,7 +920,7 @@ function poolsStale_(entrants, settings) {
 }
 // Makes a competition's draw from its Entries and writes the Fights tab. Returns the number of matches.
 function doDraw_(comp) {
-  setupSheets_();
+  if (!sheet_(fightsTab_(comp)) || !sheet_(standingsTab_(comp))) setupSheets_();
   var L = layout_(comp.settings.type);
   var entryRows = readEntryRows_();
   var entrants = entrants_(comp, entryRows);
@@ -957,10 +957,10 @@ function doDraw_(comp) {
   rotateShinpanRows_(comp, L, rows, 0, shinpanStart_(comp));
   var sh = sheet_(fightsTab_(comp));
   if (sh.getMaxRows() > 1) sh.getRange(2, 1, sh.getMaxRows() - 1, sh.getMaxColumns()).clear();
+  CacheService.getScriptCache().remove('panel|' + sh.getSheetId() + '|' + L.panel);
   if (sh.getMaxRows() < rows.length + 1) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 1 - sh.getMaxRows());
   sh.getRange(2, 1, rows.length, L.n).setValues(rows);
-  formatFights_(sh, comp);
-  timingRows_();
+  formatFights_(sh, comp, rows);
   refreshComp_(comp);
   return draw.fights.length;
 }
@@ -1224,10 +1224,14 @@ function writeStandings_(comp, state) {
   }
 }
 
-function formatFights_(sh, comp) {
+function formatFights_(sh, comp, known) {
   if (!sh) return;
   var L = layout_(comp.settings.type);
   var A = function (c) { return colLetter_(c); };
+  // Header, frozen panes and column widths only change with the layout: do them once per tab.
+  var props = PropertiesService.getDocumentProperties(), fmtKey = 'fmt|' + sh.getSheetId();
+  var fmtSig = L.n + '|' + L.team;
+  if (props.getProperty(fmtKey) !== fmtSig) {
   sh.getRange(1, 1, 1, L.n).setValues([L.headers]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff').setHorizontalAlignment('center');
   sh.getRange(1, L.red, 1, L.nm + 2).setBackground('#c8102e');
   sh.getRange(1, L.wm, 1, L.nm + 2).setBackground('#ffffff').setFontColor('#1f2a44');
@@ -1238,6 +1242,8 @@ function formatFights_(sh, comp) {
   widths[L.red] = 200; widths[L.white] = 200; widths[L.rF] = 62; widths[L.wF] = 62; widths[L.done] = 70; widths[L.rIpp] = 95; widths[L.wIpp] = 95; widths[L.winner] = 200;
   widths[L.shinpan] = 150; widths[L.shinpan + 1] = 150; widths[L.shinpan + 2] = 150; widths[L.pool] = 45; widths[L.redFrom] = 80; widths[L.whiteFrom] = 80;
   for (var c = 1; c <= L.n; c++) sh.setColumnWidth(c, widths[c] || 32);
+  props.setProperty(fmtKey, fmtSig);
+  }
   var n = Math.max(1, sh.getLastRow() - 1);
   sh.getRange(2, 1, n, L.n).setVerticalAlignment('middle');
   var markRule = SpreadsheetApp.newDataValidation().requireValueInList(MARKS, true).setAllowInvalid(false).setHelpText('M, K, D or T for ippon. H for a hansoku point, or just two ∆ on the other side.').build();
@@ -1252,7 +1258,7 @@ function formatFights_(sh, comp) {
     sh.getRange(2, L.red, n, 1).clearDataValidations(); sh.getRange(2, L.white, n, 1).clearDataValidations();
   }
   // Bout formulas. Team rows are left for the script, which writes the match result there.
-  var vals = sh.getRange(2, 1, n, L.n).getValues();
+  var vals = known && known.length === n ? known : sh.getRange(2, 1, n, L.n).getValues();
   var rc = function (c) { return 'RC' + c; };
   var ipp = function (own, opp) {
     var o = rc(own) + ':' + rc(own + L.nm - 1), x = rc(opp) + ':' + rc(opp + L.nm - 1);
@@ -1277,7 +1283,9 @@ function formatFights_(sh, comp) {
     var mustWin = L.team ? SHIAI_PLAYOFF_RE.test(String(r[L.bout - 1]).trim()) : (!String(r[L.pool - 1]).trim() || /-PO\d*$/i.test(String(r[L.code - 1])));
     return head ? null : [fR, fW, winF(mustWin)];
   });
-  formulas.forEach(function (f, i) { if (f) { sh.getRange(i + 2, L.rIpp, 1, 2).setFormulasR1C1([[f[0], f[1]]]); sh.getRange(i + 2, L.winner).setFormulaR1C1(f[2]); } });
+  // Two writes for the whole tab. Team rows get blanks here; refreshing writes their results.
+  sh.getRange(2, L.rIpp, n, 2).setFormulasR1C1(formulas.map(function (f) { return f ? [f[0], f[1]] : ['', '']; }));
+  sh.getRange(2, L.winner, n, 1).setFormulasR1C1(formulas.map(function (f) { return [f ? f[2] : '']; }));
   sh.getRange(2, L.rIpp, n, 2).setFontColor('#8a8f99').setHorizontalAlignment('center');
   sh.getRange(2, L.winner, n, 1).setFontColor('#1f2a44').setFontWeight('bold').setBackground('#eef1f7');
   sh.getRange(2, L.pool, n, 3).setFontColor('#8a8f99');
