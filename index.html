@@ -212,7 +212,7 @@
   <div class="foot" id="foot"></div>
 </div>
 
-<script src="config.js?v=1795805457"></script>
+<script src="config.js?v=1795805616"></script>
 <script>
 'use strict';
 /* =====================================================================
@@ -317,7 +317,8 @@ function shiaiAssignPools(fighters, poolSize) {
   var size = Math.max(2, Number(poolSize) || 3);
   var existing = {};
   list.forEach(function (f) { if (f.pool) existing[f.pool] = (existing[f.pool] || 0) + 1; });
-  var nPools = Math.max(1, Math.ceil(open.length / size));
+  // Pools of about the pool size, but never a pool of one: 3 teams with a pool size of 2 make one pool of 3.
+  var nPools = Math.max(1, Math.min(Math.ceil(open.length / size), Math.floor(open.length / 2)));
   var letters = shiaiPoolLetters(nPools + Object.keys(existing).length).filter(function (l) { return !existing[l]; }).slice(0, nPools);
   // Biggest clubs first, then deal round the pools in a snake so each club spreads out.
   var byDojo = {};
@@ -499,7 +500,7 @@ function shiaiPoints(rm, wm) {
 function shiaiPositions(n) {
   if (n === 3) return ['Senpo', 'Chuken', 'Taisho'];
   if (n === 5) return ['Senpo', 'Jiho', 'Chuken', 'Fukusho', 'Taisho'];
-  var out = []; for (var i = 1; i <= n; i++) out.push('Bout ' + i); return out;
+  var out = []; for (var i = 1; i <= n; i++) out.push('Fight ' + i); return out;
 }
 var SHIAI_PLAYOFF_BOUT = 'Daihyosen';
 var SHIAI_PLAYOFF_RE = /^(daihy|play.?off)/i;
@@ -597,7 +598,7 @@ function shiaiCompute(raw) {
       var m = single(g.head, i);
       m.order = i + 1;
       m.team = true;
-      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Bout ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
+      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Fight ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
       var regular = m.bouts.filter(function (b) { return !b.extra; }), extra = m.bouts.filter(function (b) { return b.extra; })[0];
       // As on the old team sheet: each bout gives its team 3 for a win, 2 for a draw and 1 per ippon.
       // The team with more points wins the match. The daihyosen, if fought, counts like a bout.
@@ -1027,14 +1028,14 @@ function sideRow(f, side) {
       s.dojo ? el('div', { class: 'dj' }, s.dojo) : (s.members && s.members.length) ? el('div', { class: 'dj' }, s.members.join(', ')) : null),
     el('div', { class: 'marks', 'aria-label': (side === 'red' ? 'Red' : 'White') + ' marks' }, s.marks.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m))),
     f.team ? el('div', { class: 'tscore' }, teamStarted(f) ? s.ippon + ' ipp · ' + (f.scores ? f.scores[side] : 0) + ' pts' : '') : null,
-    el('div', { class: 'score', 'aria-label': f.team ? f.wins[side] + ' bouts won' : s.ippon + ' ippon' }, f.team ? (teamStarted(f) ? f.wins[side] : '') : (f.done || s.marks.length) ? s.ippon : ''));
+    el('div', { class: 'score', 'aria-label': f.team ? f.wins[side] + ' fights won' : s.ippon + ' ippon' }, f.team ? (teamStarted(f) ? f.wins[side] : '') : (f.done || s.marks.length) ? s.ippon : ''));
 }
 const teamStarted = f => f.done || (f.bouts || []).some(b => b.done || b.red.marks.length || b.white.marks.length);
 function boutRows(f) {
   if (!f.team || !f.bouts.length || (f.red.pending && f.white.pending)) return null;
   if (f.orders && !f.orders.both) {
     const waitingOn = [f.orders.red ? null : f.red.label, f.orders.white ? null : f.white.label].filter(Boolean);
-    return el('div', { class: 'fnote' }, 'Awaiting team orders' + (waitingOn.length === 1 ? ' from ' + waitingOn[0] : '') + '. The bouts show here once both teams have handed theirs in.');
+    return el('div', { class: 'fnote' }, 'Awaiting team orders' + (waitingOn.length === 1 ? ' from ' + waitingOn[0] : '') + '. The fights show here once both teams have handed theirs in.');
   }
   const marks = (ms, side) => el('span', { class: 'bm ' + side }, ms.map(m => el('span', { class: 'mk' + (m === '∆' ? ' hs' : ''), title: MARK_NAMES[m] || m }, m)));
   return el('div', { class: 'bouts' }, f.bouts.map(b => {

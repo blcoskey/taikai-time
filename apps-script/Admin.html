@@ -266,7 +266,8 @@ function shiaiAssignPools(fighters, poolSize) {
   var size = Math.max(2, Number(poolSize) || 3);
   var existing = {};
   list.forEach(function (f) { if (f.pool) existing[f.pool] = (existing[f.pool] || 0) + 1; });
-  var nPools = Math.max(1, Math.ceil(open.length / size));
+  // Pools of about the pool size, but never a pool of one: 3 teams with a pool size of 2 make one pool of 3.
+  var nPools = Math.max(1, Math.min(Math.ceil(open.length / size), Math.floor(open.length / 2)));
   var letters = shiaiPoolLetters(nPools + Object.keys(existing).length).filter(function (l) { return !existing[l]; }).slice(0, nPools);
   // Biggest clubs first, then deal round the pools in a snake so each club spreads out.
   var byDojo = {};
@@ -448,7 +449,7 @@ function shiaiPoints(rm, wm) {
 function shiaiPositions(n) {
   if (n === 3) return ['Senpo', 'Chuken', 'Taisho'];
   if (n === 5) return ['Senpo', 'Jiho', 'Chuken', 'Fukusho', 'Taisho'];
-  var out = []; for (var i = 1; i <= n; i++) out.push('Bout ' + i); return out;
+  var out = []; for (var i = 1; i <= n; i++) out.push('Fight ' + i); return out;
 }
 var SHIAI_PLAYOFF_BOUT = 'Daihyosen';
 var SHIAI_PLAYOFF_RE = /^(daihy|play.?off)/i;
@@ -546,7 +547,7 @@ function shiaiCompute(raw) {
       var m = single(g.head, i);
       m.order = i + 1;
       m.team = true;
-      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Bout ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
+      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Fight ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
       var regular = m.bouts.filter(function (b) { return !b.extra; }), extra = m.bouts.filter(function (b) { return b.extra; })[0];
       // As on the old team sheet: each bout gives its team 3 for a win, 2 for a draw and 1 per ippon.
       // The team with more points wins the match. The daihyosen, if fought, counts like a bout.
@@ -1166,7 +1167,7 @@ function teamPanel(c, st, f) {
     };
     const state = side => el('span', { class: 'pill ' + (ord[side] ? 'done' : 'lvl') }, ord[side] ? 'Order in' : 'Waiting');
     orderForm = el('div', { class: 'orders', style: 'margin-top:14px' },
-      el('div', { class: 'fhead' }, el('b', {}, 'Fighting orders'), el('span', { class: 'note' }, ord.both ? 'Both in. The board shows the bouts.' : 'The board shows the bouts once both orders are in.')),
+      el('div', { class: 'fhead' }, el('b', {}, 'Fighting orders'), el('span', { class: 'note' }, ord.both ? 'Both in. The board shows the fights.' : 'The board shows the fights once both orders are in.')),
       el('table', {},
         el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, f.red.label, ' ', state('red')), el('th', {}, f.white.label, ' ', state('white')))),
         el('tbody', {}, list.map(x => el('tr', {}, el('td', {}, el('b', {}, x.pos)), el('td', {}, pick(x, 'red')), el('td', {}, pick(x, 'white')))))),
@@ -1191,8 +1192,8 @@ function teamPanel(c, st, f) {
       statusLine(c, bb, comp, true),
       el('div', { class: 'actions' },
         rawB.done === true || rawB.done === 'TRUE'
-          ? el('button', { class: 'btn', onclick: () => patchRow(b.row, { done: false, hantei: '' }) }, 'Reopen bout')
-          : el('button', { class: 'btn good', onclick: () => { patchRow(b.row, { done: true }); const nx = list.find(x => x.row > b.row && !x.done); if (nx) S.bout = nx.row; } }, 'Bout complete')));
+          ? el('button', { class: 'btn', onclick: () => patchRow(b.row, { done: false, hantei: '' }) }, 'Reopen fight')
+          : el('button', { class: 'btn good', onclick: () => { patchRow(b.row, { done: true }); const nx = list.find(x => x.row > b.row && !x.done); if (nx) S.bout = nx.row; } }, 'Fight complete')));
   }
   const s = f.scores || { red: 0, white: 0 };
   return el('div', { class: 'card' },
@@ -1200,7 +1201,7 @@ function teamPanel(c, st, f) {
     shinpanPicker(f, head),
     el('div', { class: 'tsum' },
       el('div', { class: 't r' }, f.red.label),
-      el('div', { class: 'mid' }, el('b', {}, s.red + ' – ' + s.white), 'points · bouts ' + f.wins.red + '–' + f.wins.white + ' · ippon ' + f.red.ippon + '–' + f.white.ippon),
+      el('div', { class: 'mid' }, el('b', {}, s.red + ' – ' + s.white), 'points · fights ' + f.wins.red + '–' + f.wins.white + ' · ippon ' + f.red.ippon + '–' + f.white.ippon),
       el('div', { class: 't w' }, f.white.label)),
     pending ? el('div', { class: 'alert' }, 'Waiting for ' + [f.red, f.white].filter(x => x.pending).map(x => x.label).join(' and ') + '.') : null,
     f.done ? el('div', { class: 'status' }, f.result === 'draw' ? 'Match drawn.' : (f.result === 'red' ? f.red.label : f.white.label) + ' win the match' + (f.forfeit ? ' by forfeit.' : '.')) : null,
@@ -1232,7 +1233,7 @@ function renderPools() {
   const team = st.type === 'team';
   return el('div', {},
     el('h2', {}, S.comp + ' pools'),
-    el('p', { class: 'note' }, team ? 'Points are every bout added up: 3 per bout won, 2 per bout drawn, 1 per ippon.' : 'Points: 3 for a win, 2 for a draw, 1 per ippon scored. Forfeit wins count 2 ippon. Equal points at a place that matters means a play-off.'),
+    el('p', { class: 'note' }, team ? 'Points are every fight added up: 3 per fight won, 2 per fight drawn, 1 per ippon.' : 'Points: 3 for a win, 2 for a draw, 1 per ippon scored. Forfeit wins count 2 ippon. Equal points at a place that matters means a play-off.'),
     el('div', { class: 'grid2' }, st.pools.map(p => el('div', { class: 'card' },
       el('div', { class: 'phead' }, el('b', {}, 'Pool ' + p.pool), el('span', { class: 'note' }, p.complete ? (p.playoffNeeded ? 'Finished: play-off needed' : 'Finished') : p.played + ' of ' + p.total + ' done')),
       el('table', {}, el('thead', {}, el('tr', {}, ['', team ? 'Team' : 'Fighter', 'Fought', 'W', 'D', 'L', 'Ippon', 'Points', ''].map((h, i) => el('th', { class: i > 1 && i < 8 ? 'n' : '' }, h)))),
@@ -1298,7 +1299,7 @@ function renderEntries() {
   };
   return el('div', {},
     el('h2', {}, S.comp + ' entries'),
-    el('p', { class: 'note' }, team ? 'Pick each fighter from the individual competitions and give them a team name. Fighters with the same team name make a team, fighting in the order listed. Set the number of bouts on the Settings tab.' : 'To move someone to another competition, use Move, save, and redo both draws. Leave Pool blank and the draw sets it, keeping clubmates apart. Clear the pools to redraw from scratch.'),
+    el('p', { class: 'note' }, team ? 'Pick each fighter from the individual competitions and give them a team name. Fighters with the same team name make a team, fighting in the order listed. Set the number of fights per team match on the Settings tab.' : 'To move someone to another competition, use Move, save, and redo both draws. Leave Pool blank and the draw sets it, keeping clubmates apart. Clear the pools to redraw from scratch.'),
     el('div', { class: 'card' }, el('table', {},
       el('thead', {}, el('tr', {}, (team ? ['Fighter', 'Team', 'Pool', ''] : ['Name', 'Dojo', 'Age', 'Pool', '']).map(h => el('th', {}, h)))), body),
       el('div', { class: 'row', style: 'margin-top:10px' },
@@ -1342,9 +1343,9 @@ function renderSpirit() {
 }
 
 /* ----- Settings tab ----- */
-const DRAW_SETTINGS = ['Pool size', 'Qualify per pool', 'Courts (shiaijo)', 'Bouts per team match'];
+const DRAW_SETTINGS = ['Pool size', 'Qualify per pool', 'Courts (shiaijo)', 'Fights per team match'];
 const EDITABLE = [
-  ['Bouts per team match', 'number', 'Team events. A daihyosen is added after these.', 'team'],
+  ['Fights per team match', 'number', 'Team events. A daihyosen is added after these.', 'team'],
   ['Pool size', 'number', 'Used when the draw makes the pools.'],
   ['Qualify per pool', 'number', 'How many from each pool go through.'],
   ['Courts (shiaijo)', 'number', ''],

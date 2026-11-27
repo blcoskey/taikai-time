@@ -93,7 +93,8 @@ function shiaiAssignPools(fighters, poolSize) {
   var size = Math.max(2, Number(poolSize) || 3);
   var existing = {};
   list.forEach(function (f) { if (f.pool) existing[f.pool] = (existing[f.pool] || 0) + 1; });
-  var nPools = Math.max(1, Math.ceil(open.length / size));
+  // Pools of about the pool size, but never a pool of one: 3 teams with a pool size of 2 make one pool of 3.
+  var nPools = Math.max(1, Math.min(Math.ceil(open.length / size), Math.floor(open.length / 2)));
   var letters = shiaiPoolLetters(nPools + Object.keys(existing).length).filter(function (l) { return !existing[l]; }).slice(0, nPools);
   // Biggest clubs first, then deal round the pools in a snake so each club spreads out.
   var byDojo = {};
@@ -275,7 +276,7 @@ function shiaiPoints(rm, wm) {
 function shiaiPositions(n) {
   if (n === 3) return ['Senpo', 'Chuken', 'Taisho'];
   if (n === 5) return ['Senpo', 'Jiho', 'Chuken', 'Fukusho', 'Taisho'];
-  var out = []; for (var i = 1; i <= n; i++) out.push('Bout ' + i); return out;
+  var out = []; for (var i = 1; i <= n; i++) out.push('Fight ' + i); return out;
 }
 var SHIAI_PLAYOFF_BOUT = 'Daihyosen';
 var SHIAI_PLAYOFF_RE = /^(daihy|play.?off)/i;
@@ -373,7 +374,7 @@ function shiaiCompute(raw) {
       var m = single(g.head, i);
       m.order = i + 1;
       m.team = true;
-      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Bout ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
+      m.bouts = g.bouts.map(function (b, k) { var x = single(b, k); x.pos = shiaiClean(b.bout) || 'Fight ' + (k + 1); x.extra = SHIAI_PLAYOFF_RE.test(x.pos); if (x.extra) mustWin_(x); return x; });
       var regular = m.bouts.filter(function (b) { return !b.extra; }), extra = m.bouts.filter(function (b) { return b.extra; })[0];
       // As on the old team sheet: each bout gives its team 3 for a win, 2 for a draw and 1 per ippon.
       // The team with more points wins the match. The daihyosen, if fought, counts like a bout.
@@ -665,7 +666,7 @@ var COMP_SETTINGS = [
   ['Points for a win', 'winPts', 3, ''],
   ['Points for a draw', 'drawPts', 2, ''],
   ['Points per ippon', 'ipponPts', 1, ''],
-  ['Bouts per team match', 'teamSize', 3, 'Team events only. A daihyosen bout is added after these.'],
+  ['Fights per team match', 'teamSize', 3, 'Team events only. A daihyosen is added after these.'],
   ['Show fighting spirit on web app', 'showSpirit', 'No', 'Yes or No'],
   ['Encho minutes', 'enchoMin', '', 'Blank = until someone scores'],
   ['Hantei after encho', 'hantei', 'No', 'Yes or No. Knockout and play-off fights only.'],
@@ -673,7 +674,7 @@ var COMP_SETTINGS = [
 var MARKS = ['M', 'K', 'D', 'T', 'H', '∆'];
 // Timing lives on the Competitions tab only (the web app never shows it).
 var TIMING_SETTINGS = [
-  ['Minutes per fight before semi-finals', 3, 'Pool fights, play-offs and quarter-finals. In team events, per bout.'],
+  ['Minutes per fight before semi-finals', 3, 'Pool fights, play-offs and quarter-finals. In team events, per fight.'],
   ['Minutes per fight from semi-finals', 5, 'Semi-finals and final'],
   ['Start time', '', 'Type a time like 9:00 to get a finish time'],
 ];
@@ -688,7 +689,7 @@ function layout_(type) {
   var L = { team: !!t, nm: 5, order: 1, code: 2, stage: 3, court: 4, bout: t ? 5 : 0, red: 5 + t, rm: 6 + t, rF: 11 + t, wm: 12 + t, wF: 17 + t, white: 18 + t, done: 19 + t, winner: 20 + t, shinpan: 21 + t, rIpp: 24 + t, wIpp: 25 + t, pool: 26 + t, redFrom: 27 + t, whiteFrom: 28 + t, hantei: 29 + t };
   L.n = 29 + t;
   L.panel = L.n + 2; // pool tables start here, after one empty column
-  L.headers = ['#', 'Fight', 'Stage', 'Court'].concat(t ? ['Bout'] : [], ['Red', '', '', '', '', '', 'Forfeit', '', '', '', '', '', 'Forfeit', 'White', 'Fight complete', 'Result', 'Shushin', 'Fukushin', 'Fukushin', 'Red ippon', 'White ippon', 'Pool', 'Red from', 'White from', 'Hantei']);
+  L.headers = ['#', 'Fight', 'Stage', 'Court'].concat(t ? ['Position'] : [], ['Red', '', '', '', '', '', 'Forfeit', '', '', '', '', '', 'Forfeit', 'White', 'Fight complete', 'Result', 'Shushin', 'Fukushin', 'Fukushin', 'Red ippon', 'White ippon', 'Pool', 'Red from', 'White from', 'Hantei']);
   return L;
 }
 function colLetter_(n) { var s = ''; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
@@ -848,6 +849,9 @@ function readCompsNow_() {
   if (h < 0) return [];
   var keyOf = {};
   COMP_SETTINGS.forEach(function (r) { keyOf[r[0].toLowerCase()] = r[1]; });
+  keyOf['bouts per team match'] = 'teamSize';
+  // Kendo says fight, not bout: rename the old label on the sheet the first time it is seen.
+  for (var b = h + 1; b < v.length; b++) if (/^bouts per team match$/i.test(String(v[b][0]).trim())) { sh.getRange(b + 1, 1).setValue('Fights per team match'); v[b][0] = 'Fights per team match'; }
   var comps = [];
   for (var c = 1; c < v[h].length; c++) {
     var name = String(v[h][c]).trim();
@@ -1331,7 +1335,7 @@ function formatFights_(sh, comp, known) {
   var A = function (c) { return colLetter_(c); };
   // Header, frozen panes and column widths only change with the layout: do them once per tab.
   var props = PropertiesService.getDocumentProperties(), fmtKey = 'fmt|' + sh.getSheetId();
-  var fmtSig = L.n + '|' + L.team;
+  var fmtSig = L.n + '|' + L.team + '|v2';
   if (props.getProperty(fmtKey) !== fmtSig) {
   sh.getRange(1, 1, 1, L.n).setValues([L.headers]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff').setHorizontalAlignment('center');
   sh.getRange(1, L.red, 1, L.nm + 2).setBackground('#c8102e');
