@@ -1,5 +1,5 @@
 /* Shiai: draw generator, admin scoring and live board for a kendo shiai run from Google Sheets.
-   Paste this into Extensions > Apps Script as Code.gs. Add HTML files named Index and Admin. */
+   Paste this into Extensions > Apps Script as Code.gs. Add an HTML file named Admin. */
 
 /* ===================== SHIAI CORE (shared by Code.gs and the web page) =====================
    Pure functions only: no sheet or page access here, so the sheet and the web app always agree.
@@ -593,7 +593,7 @@ function shiaiPoolPanel(state) {
    Scorers only type marks, Decision and Done on a Fights tab. Everything else updates by itself.
 ======================================================== */
 
-var TAB = { comps: 'Competitions', entries: 'Entries', shinpan: 'Shinpan', spirit: 'Fighting Spirit' };
+var TAB = { comps: 'Competitions', entries: 'Entries', shinpan: 'Shinpan', spirit: 'Fighting Spirit', board: 'Board' };
 var COMP_SETTINGS = [
   ['Type', 'type', 'Individual', 'Individual or Team'],
   ['Courts (shiaijo)', 'courts', 1, ''],
@@ -642,6 +642,7 @@ function onOpen() {
     .addItem('Add play-off fights', 'addPlayoffs')
     .addItem('Redo shinpan rotation from the next fight', 'rotateShinpanMenu')
     .addItem('Refresh standings', 'refreshNow')
+    .addItem('Update public board', 'refreshBoard')
     .addSeparator()
     .addItem('Set up sheets', 'setupSheets')
     .addItem('Tidy Fights formatting', 'formatAllMenu')
@@ -654,15 +655,16 @@ function drawComp5() { generateDraw_(4); } function drawComp6() { generateDraw_(
 function onEdit(e) {
   try {
     var name = e && e.range ? e.range.getSheet().getName() : '';
+    if (name === TAB.board) return;
     var comps = readComps_();
     var hit = comps.filter(function (c) { return fightsTab_(c) === name; })[0];
     if (hit) refreshComp_(hit);
     else if ([TAB.entries, TAB.comps, TAB.spirit].indexOf(name) >= 0) comps.forEach(refreshComp_);
-    CacheService.getScriptCache().remove('state');
+    publishBoard_();
   } catch (err) { /* never block a scorer's edit */ }
 }
 
-function refreshNow() { readComps_().forEach(refreshComp_); CacheService.getScriptCache().remove('state'); SpreadsheetApp.getActive().toast('Standings and knockout names updated.'); }
+function refreshNow() { readComps_().forEach(refreshComp_); publishBoard_(); SpreadsheetApp.getActive().toast('Standings and knockout names updated.'); }
 function formatAllMenu() { readComps_().forEach(function (c) { var sh = sheet_(fightsTab_(c)); if (sh) formatFights_(sh, c); }); SpreadsheetApp.getActive().toast('Fights tabs tidied.'); }
 
 function sheet_(name) { return SpreadsheetApp.getActive().getSheetByName(name); }
@@ -687,7 +689,7 @@ function setupSheets_() {
   var c = ss.getSheetByName(TAB.comps);
   if (!c) {
     c = ss.insertSheet(TAB.comps, 0);
-    c.getRange(1, 1, 2, 2).setValues([['Event name', 'Shiai'], ['Admin code', '']]).setFontWeight('bold');
+    c.getRange(1, 1, 1, 2).setValues([['Event name', 'Shiai']]).setFontWeight('bold');
     c.getRange(3, 1, 1, 4).setValues([['Setting', 'Kids', 'Juniors', 'Teams']]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff');
     c.getRange(4, 1, COMP_SETTINGS.length, 4).setValues(COMP_SETTINGS.map(function (r) { return [r[0], r[2], r[2], r[1] === 'type' ? 'Team' : r[2]]; }));
     c.setColumnWidth(1, 240);
@@ -919,7 +921,7 @@ function doDraw_(comp) {
   formatFights_(sh, comp);
   timingRows_();
   refreshComp_(comp);
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return draw.fights.length;
 }
 
@@ -967,7 +969,7 @@ function doPlayoffs_() {
     });
     if (added) { formatFights_(sh, comp); rotateShinpan_(comp); refreshComp_(comp); }
   });
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return added;
 }
 
@@ -1030,7 +1032,7 @@ function rotateShinpanMenu() {
   if (names.length < 3) { SpreadsheetApp.getUi().alert('Put at least three shinpan on the Shinpan tab, in the order they rotate.'); return; }
   var n = 0;
   readComps_().forEach(function (c) { n += rotateShinpan_(c); });
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   SpreadsheetApp.getActive().toast('Shinpan filled in for ' + n + ' matches still to fight.');
 }
 
@@ -1228,21 +1230,10 @@ function formatFights_(sh, comp) {
 
 
 /* ===================== ADMIN APP =====================
-   The admin page (/exec?page=admin) scores fights and runs the day. Every call checks the admin code
-   from the Competitions tab (cell B2). The sheet stays the record: you can still score in it directly.
+   The web app link opens the admin page, which scores fights and runs the day. Deploy it with
+   "Who has access: Only myself" so only your Google account can open it. The sheet stays the
+   record: you can still score in it directly.
 ====================================================== */
-function readAdminCode_() {
-  var sh = sheet_(TAB.comps);
-  if (!sh) return '';
-  var v = sh.getRange(1, 1, 6, 2).getValues();
-  for (var i = 0; i < v.length; i++) if (/^admin code$/i.test(String(v[i][0]).trim())) return String(v[i][1]).trim();
-  return '';
-}
-function checkCode_(code) {
-  var real = readAdminCode_();
-  if (!real) throw new Error('Set an admin code on the Competitions tab (next to "Admin code") first.');
-  if (String(code || '').trim() !== real) throw new Error('That code is not right.');
-}
 function compByName_(name) {
   var c = readComps_().filter(function (x) { return x.name === name; })[0];
   if (!c) throw new Error('No competition called ' + name + '.');
@@ -1290,11 +1281,10 @@ function adminData_() {
   });
 }
 
-function adminLoad(code) { checkCode_(code); return adminData_(); }
+function adminLoad() { return adminData_(); }
 
 // patch: { rm:[], wm:[], rF, wF, done, hantei:'Red'|'White'|'', shinpan:[3], red, white }
-function adminSave(code, compName, row, patch) {
-  checkCode_(code);
+function adminSave(compName, row, patch) {
   var comp = compByName_(compName);
   var L = layout_(comp.settings.type);
   var sh = sheet_(fightsTab_(comp));
@@ -1317,30 +1307,26 @@ function adminSave(code, compName, row, patch) {
     cols.forEach(function (c) { sh.getRange(row, c[0], 1, c[1]).setValues([r.slice(c[0] - 1, c[0] - 1 + c[1])]); });
   } finally { lock.releaseLock(); }
   refreshComp_(comp);
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return adminData_();
 }
 
-function adminDraw(code, compName) {
-  checkCode_(code);
+function adminDraw(compName) {
   doDraw_(compByName_(compName));
   return adminData_();
 }
-function adminPlayoffs(code) {
-  checkCode_(code);
+function adminPlayoffs() {
   var n = doPlayoffs_();
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return JSON.stringify({ added: n, data: JSON.parse(adminData_()) });
 }
-function adminRotate(code) {
-  checkCode_(code);
+function adminRotate() {
   readComps_().forEach(function (c) { rotateShinpan_(c); });
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return adminData_();
 }
 // rows: [[Competition, Name, Dojo, Grade, Pool, Team, Age]]
-function adminSaveEntries(code, rows) {
-  checkCode_(code);
+function adminSaveEntries(rows) {
   var sh = sheet_(TAB.entries);
   var lock = LockService.getDocumentLock(); lock.waitLock(10000);
   try {
@@ -1352,11 +1338,10 @@ function adminSaveEntries(code, rows) {
     }
   } finally { lock.releaseLock(); }
   readComps_().forEach(refreshComp_);
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return adminData_();
 }
-function adminSaveShinpan(code, names) {
-  checkCode_(code);
+function adminSaveShinpan(names) {
   var sh = sheet_(TAB.shinpan);
   if (sh.getMaxRows() > 1) sh.getRange(2, 1, sh.getMaxRows() - 1, 1).clearContent();
   var list = names.map(shiaiClean).filter(Boolean);
@@ -1367,8 +1352,7 @@ function adminSaveShinpan(code, names) {
   return adminData_();
 }
 // votes: [[shinpan, vote1, vote2]] for one competition
-function adminSaveSpirit(code, compName, votes) {
-  checkCode_(code);
+function adminSaveSpirit(compName, votes) {
   var sh = sheet_(TAB.spirit);
   var all = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues() : [];
   var keep = all.filter(function (r) { return String(r[0]).trim() && shiaiKey(r[0]) !== shiaiKey(compName); });
@@ -1379,12 +1363,11 @@ function adminSaveSpirit(code, compName, votes) {
     if (sh.getMaxRows() < out.length + 1) sh.insertRowsAfter(sh.getMaxRows(), out.length + 1 - sh.getMaxRows());
     sh.getRange(2, 1, out.length, 4).setValues(out);
   }
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return adminData_();
 }
 // values: { 'Setting label': value } for one competition column
-function adminSaveSettings(code, compName, values) {
-  checkCode_(code);
+function adminSaveSettings(compName, values) {
   var sh = sheet_(TAB.comps);
   var v = sh.getDataRange().getValues();
   var h = -1;
@@ -1396,38 +1379,41 @@ function adminSaveSettings(code, compName, values) {
   });
   timingRows_();
   readComps_().forEach(refreshComp_);
-  CacheService.getScriptCache().remove('state');
+  publishBoard_();
   return adminData_();
 }
 
-/* ===================== WEB APP =====================
-   Deploy > New deployment > Web app, Execute as: Me, Who has access: Anyone.
-   The /exec link opens the board. Add ?format=json for the raw data.
-==================================================== */
-function getState_() {
-  var cache = CacheService.getScriptCache();
-  var hit = cache.get('state');
-  if (hit) return hit;
+/* ===================== PUBLIC BOARD =====================
+   The board on GitHub Pages reads the Board tab straight from the sheet (share the sheet as
+   "Anyone with the link: Viewer"). Every change writes the latest standings there as JSON,
+   split over column A in pieces. Don't type in the Board tab.
+========================================================== */
+var BOARD_CHUNK = 20000;
+function boardState_() {
   var entryRows = readEntryRows_();
   var comps = readComps_().map(function (c) { return Object.assign(shiaiCompute(readRaw_(c, entryRows)), { name: c.name }); });
-  var json = JSON.stringify({ ok: true, event: readEvent_(), updated: new Date().toISOString(), competitions: comps });
-  try { cache.put('state', json, 10); } catch (e) { /* too big to cache: fine */ }
-  return json;
+  return JSON.stringify({ ok: true, event: readEvent_(), updated: new Date().toISOString(), competitions: comps });
 }
+function publishBoard_() {
+  try {
+    var ss = SpreadsheetApp.getActive();
+    var sh = ss.getSheetByName(TAB.board) || ss.insertSheet(TAB.board);
+    var json = boardState_();
+    var rows = [['Used by the public board. Updated automatically: do not edit.']];
+    for (var i = 0; i < json.length; i += BOARD_CHUNK) rows.push(['~' + json.slice(i, i + BOARD_CHUNK)]);
+    var old = sh.getLastRow();
+    if (old > rows.length) sh.getRange(rows.length + 1, 1, old - rows.length, 1).clearContent();
+    sh.getRange(1, 1, rows.length, 1).setNumberFormat('@').setValues(rows);
+  } catch (e) { /* never block scoring because of the board */ }
+}
+function refreshBoard() { publishBoard_(); SpreadsheetApp.getActive().toast('Public board updated.'); }
 
-function api() { return getState_(); }
-
-function doGet(e) {
-  if (e && e.parameter && e.parameter.format === 'json') {
-    return ContentService.createTextOutput(getState_()).setMimeType(ContentService.MimeType.JSON);
-  }
-  if (e && e.parameter && e.parameter.page === 'admin') {
-    return HtmlService.createHtmlOutputFromFile('Admin')
-      .setTitle('Admin · ' + (readEvent_() || 'Shiai'))
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-  }
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle(readEvent_() || 'Shiai')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+/* ===================== WEB APP =====================
+   Deploy > New deployment > Web app. Execute as: Me. Who has access: Only myself.
+   The /exec link opens the admin page.
+==================================================== */
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Admin')
+    .setTitle('Admin · ' + (readEvent_() || 'Shiai'))
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }

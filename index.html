@@ -217,11 +217,12 @@
 'use strict';
 /* =====================================================================
    SETTINGS
-   Option A (page served by the Apps Script web app): leave SCRIPT_URL empty.
-   Option B (page hosted elsewhere): paste your web app URL (ends in /exec).
-   With neither, the page runs a demo with made-up fighters.
+   SHEET: the Google Sheet's link (or just its ID), set in config.js. The sheet must be shared as
+   "Anyone with the link: Viewer". The board reads the Board tab, which the sheet keeps up to date.
+   With no sheet set, the page runs a demo with made-up fighters.
    ===================================================================== */
-const SCRIPT_URL = (typeof window !== 'undefined' && window.SHIAI_SCRIPT_URL) || '';
+const SHEET = (typeof window !== 'undefined' && (window.SHIAI_SHEET || window.SHIAI_SHEET_ID)) || '';
+const SHEET_ID = (String(SHEET).match(/\/d\/([a-zA-Z0-9_-]+)/) || [])[1] || String(SHEET).trim();
 const POLL_MS = 15000;
 
 /* ===================== SHIAI CORE (shared by Code.gs and the web page) =====================
@@ -815,12 +816,21 @@ function appsScriptSource() {
       .api();
   });
 }
-function urlSource(url) {
+// Reads the Board tab through Google's public sheet query feed (no sign-in, works from any site).
+function sheetSource(id) {
+  let n = 0;
   return async () => {
+    const url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(id) + '/gviz/tq?sheet=Board&headers=0&tqx=out:json;reqId:' + (++n) + '-' + Date.now();
     let res;
-    try { res = await fetch(url + (url.includes('?') ? '&' : '?') + 'format=json', { redirect: 'follow' }); }
-    catch (e) { throw new Error('No connection. Check your signal.'); }
-    let d; try { d = await res.json(); } catch (e) { throw new Error('The sheet sent something unexpected.'); }
+    try { res = await fetch(url, { cache: 'no-store' }); }
+    catch (e) { throw new Error('No connection, or the sheet is not shared as "Anyone with the link".'); }
+    const text = await res.text();
+    const a = text.indexOf('('), b = text.lastIndexOf(')');
+    let q; try { q = JSON.parse(text.slice(a + 1, b)); } catch (e) { throw new Error('Could not read the sheet. Is it shared as "Anyone with the link: Viewer"?'); }
+    if (q.status === 'error') throw new Error('Could not read the sheet: ' + ((q.errors && q.errors[0] && (q.errors[0].detailed_message || q.errors[0].message)) || 'unknown error') + '.');
+    const json = ((q.table && q.table.rows) || []).map(r => (r.c && r.c[0] && r.c[0].v) || '').filter(v => typeof v === 'string' && v[0] === '~').map(v => v.slice(1)).join('');
+    if (!json) throw new Error('The Board tab is empty. In the sheet, use Shiai > Update public board.');
+    let d; try { d = JSON.parse(json); } catch (e) { throw new Error('The Board tab is mid-update. Trying again shortly.'); }
     if (!d || d.ok !== true) throw new Error('Could not read the sheet.');
     return d;
   };
@@ -900,9 +910,9 @@ function demoSource() {
 }
 
 const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
-const DEMO = !IN_APPS_SCRIPT && !SCRIPT_URL;
+const DEMO = !IN_APPS_SCRIPT && !SHEET_ID;
 const demo = DEMO ? demoSource() : null;
-const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : DEMO ? demo.get : urlSource(SCRIPT_URL);
+const fetchState = IN_APPS_SCRIPT ? appsScriptSource() : DEMO ? demo.get : sheetSource(SHEET_ID);
 
 /* ---------------- Helpers ---------------- */
 function lsGet(k) { try { return localStorage.getItem('shiai_' + k) || ''; } catch (e) { return ''; } }

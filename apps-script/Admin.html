@@ -144,12 +144,11 @@
 </head>
 <body>
 <div class="wrap">
-  <div id="demo" class="demo hidden">Demo: this runs on a copy of the sheet kept in your browser. Code: <b>kendo</b>. Use Reset on the Settings tab to start again.</div>
+  <div id="demo" class="demo hidden">Demo: this runs on a copy of the sheet kept in your browser. Use Reset on the Settings tab to start again.</div>
   <div id="login" class="login card hidden">
     <h1>Shiai admin</h1>
-    <p class="note">Enter the admin code from the Competitions tab of the sheet.</p>
-    <form id="loginForm"><input id="code" type="password" autocomplete="current-password" aria-label="Admin code" placeholder="Admin code"><button class="btn primary" type="submit">Open</button></form>
-    <p id="loginErr" class="alert bad hidden"></p>
+    <p id="loginErr" class="alert bad">Could not open the sheet.</p>
+    <button class="btn primary" type="button" onclick="location.reload()">Try again</button>
   </div>
   <div id="app" class="hidden">
     <header>
@@ -768,11 +767,11 @@ function call(fn, ...args) {
     });
   }
   if (typeof demoServer !== 'undefined') return demoServer.call(fn, args);
-  return Promise.reject(new Error('Open this page from the Apps Script web app link with ?page=admin.'));
+  return Promise.reject(new Error('Open this page from the Apps Script web app link.'));
 }
 
 /* ---------------- State ---------------- */
-const S = { code: '', data: null, comp: '', tab: 'score', sel: null, bout: null, busy: 0, err: '' };
+const S = { data: null, comp: '', tab: 'score', sel: null, bout: null, busy: 0, err: '' };
 const store = { get: k => { try { return localStorage.getItem('shiai_admin_' + k) || ''; } catch (e) { return ''; } },
   set: (k, v) => { try { v ? localStorage.setItem('shiai_admin_' + k, v) : localStorage.removeItem('shiai_admin_' + k); } catch (e) {} } };
 
@@ -812,7 +811,7 @@ function setData(json) {
 }
 async function run(fn, ...args) {
   S.busy++; renderSync();
-  try { const out = await call(fn, S.code, ...args); return out; }
+  try { const out = await call(fn, ...args); return out; }
   catch (e) { S.err = e.message; toast(e.message); throw e; }
   finally { S.busy--; renderSync(); }
 }
@@ -862,7 +861,7 @@ function primeFlags(d) {
 }
 
 async function load() {
-  try { const out = await run('adminLoad'); const d = JSON.parse(out); primeFlags(d); setData(d); store.set('code', S.code); return true; }
+  try { const out = await run('adminLoad'); const d = JSON.parse(out); primeFlags(d); setData(d); return true; }
   catch (e) { return false; }
 }
 const _setData = setData;
@@ -1197,19 +1196,11 @@ document.getElementById('theme').onclick = () => {
 };
 if (store.get('theme')) document.documentElement.dataset.theme = store.get('theme');
 S.tab = store.get('tab') || 'score';
-document.getElementById('loginForm').onsubmit = async e => {
-  e.preventDefault();
-  S.code = document.getElementById('code').value.trim();
-  const ok = await load();
-  const err = document.getElementById('loginErr');
-  if (ok) { document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden'); }
-  else { err.textContent = S.err; err.classList.remove('hidden'); }
-};
 (async () => {
   if (typeof demoServer !== 'undefined') document.getElementById('demo').classList.remove('hidden');
-  S.code = store.get('code');
-  if (S.code && await load()) { document.getElementById('app').classList.remove('hidden'); }
-  else document.getElementById('login').classList.remove('hidden');
+  store.set('code', '');
+  if (await load()) { document.getElementById('app').classList.remove('hidden'); }
+  else { document.getElementById('loginErr').textContent = S.err || 'Could not open the sheet.'; document.getElementById('login').classList.remove('hidden'); }
   // Pick up scores typed straight into the sheet.
   setInterval(() => { if (!S.busy && !queue.size && S.data && !document.hidden && document.getElementById('view').dataset.dirty !== '1') load(); }, 20000);
 })();
