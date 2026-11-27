@@ -1407,35 +1407,59 @@ function adminData_() {
 function adminLoad() { return reading_(adminData_); }
 
 // patch: { rm:[], wm:[], rF, wF, done, hantei:'Red'|'White'|'', shinpan:[3], red, white }
+// One save from the admin app. Kept for older pages; new pages send batches to adminSaveMany.
 function adminSave(compName, row, patch) {
-  var comp = compByName_(compName);
-  var L = layout_(comp.settings.type);
-  var sh = sheet_(fightsTab_(comp));
-  var lock = LockService.getDocumentLock(); lock.waitLock(10000);
+  return adminSaveMany([{ comp: compName, row: row, patch: patch }]);
+}
+
+// A batch of score changes, applied in order under one lock, then one recalculation per competition.
+// items: [{ comp, row, code, bout, patch: { rm:[], wm:[], rF, wF, done, hantei, shinpan:[3], red, white } }]
+// code/bout identify the fight, so a change still lands on the right row if rows moved (play-offs).
+function adminSaveMany(items) {
+  var lock = LockService.getDocumentLock(); lock.waitLock(30000);
+  var heavy = {}, comps = {};
   try {
-    var r = sh.getRange(row, 1, 1, L.n).getValues()[0];
-    var set = function (col, val) { r[col - 1] = val; };
-    var marks = function (col, list) { for (var k = 0; k < L.nm; k++) set(col + k, (list || [])[k] || ''); };
-    if (patch.rm) marks(L.rm, patch.rm);
-    if (patch.wm) marks(L.wm, patch.wm);
-    if ('rF' in patch) set(L.rF, !!patch.rF);
-    if ('wF' in patch) set(L.wF, !!patch.wF);
-    if ('done' in patch) set(L.done, !!patch.done);
-    if ('hantei' in patch) set(L.hantei, patch.hantei || '');
-    if (patch.shinpan) for (var k = 0; k < 3; k++) set(L.shinpan + k, patch.shinpan[k] || '');
-    if (L.team && 'red' in patch) set(L.red, patch.red || '');
-    if (L.team && 'white' in patch) set(L.white, patch.white || '');
-    // Write only the typed cells, so the formulas in the row stay. Red to Fight complete has no formulas.
-    var keys = Object.keys(patch);
-    var scoring = keys.some(function (k) { return k !== 'shinpan' && k !== 'hantei'; });
-    if (scoring) sh.getRange(row, L.red, 1, L.done - L.red + 1).setValues([r.slice(L.red - 1, L.done)]);
-    if (patch.shinpan) sh.getRange(row, L.shinpan, 1, 3).setValues([r.slice(L.shinpan - 1, L.shinpan + 2)]);
-    if ('hantei' in patch) sh.getRange(row, L.hantei).setValue(r[L.hantei - 1]);
+    var cache = {};
+    (items || []).forEach(function (it) {
+      var comp = comps[it.comp] = comps[it.comp] || compByName_(it.comp);
+      var L = layout_(comp.settings.type);
+      var sh = sheet_(fightsTab_(comp));
+      if (!sh) throw new Error('No fights for ' + it.comp + '.');
+      var rows = cache[it.comp] = cache[it.comp] || readFightRowsNow_(comp);
+      var row = findRow_(L, rows, it);
+      if (!row) throw new Error('Fight ' + (it.code || it.row) + (it.bout ? ' ' + it.bout : '') + ' is no longer in ' + it.comp + '. Refresh the page.');
+      var r = rows[row - 2], patch = it.patch || {};
+      var set = function (col, val) { r[col - 1] = val; };
+      var marks = function (col, list) { for (var k = 0; k < L.nm; k++) set(col + k, (list || [])[k] || ''); };
+      if (patch.rm) marks(L.rm, patch.rm);
+      if (patch.wm) marks(L.wm, patch.wm);
+      if ('rF' in patch) set(L.rF, !!patch.rF);
+      if ('wF' in patch) set(L.wF, !!patch.wF);
+      if ('done' in patch) set(L.done, !!patch.done);
+      if ('hantei' in patch) set(L.hantei, patch.hantei || '');
+      if (patch.shinpan) for (var k = 0; k < 3; k++) set(L.shinpan + k, patch.shinpan[k] || '');
+      if (L.team && 'red' in patch) set(L.red, patch.red || '');
+      if (L.team && 'white' in patch) set(L.white, patch.white || '');
+      // Write only the typed cells, so the formulas in the row stay. Red to Fight complete has no formulas.
+      var keys = Object.keys(patch);
+      if (keys.some(function (k) { return k !== 'shinpan' && k !== 'hantei'; })) sh.getRange(row, L.red, 1, L.done - L.red + 1).setValues([r.slice(L.red - 1, L.done)]);
+      if (patch.shinpan) sh.getRange(row, L.shinpan, 1, 3).setValues([r.slice(L.shinpan - 1, L.shinpan + 2)]);
+      if ('hantei' in patch) sh.getRange(row, L.hantei).setValue(r[L.hantei - 1]);
+      // Shinpan names, and marks on an individual fight that isn't finished, don't change standings or the draw.
+      var light = keys.every(function (k) { return k === 'shinpan' || ((k === 'rm' || k === 'wm') && !L.team); }) && r[L.done - 1] !== true;
+      if (!light) heavy[it.comp] = true;
+    });
   } finally { lock.releaseLock(); }
-  // Shinpan names, and marks on an individual fight that isn't finished, don't change standings or the draw.
-  var light = keys.every(function (k) { return k === 'shinpan' || ((k === 'rm' || k === 'wm') && !L.team); }) && r[L.done - 1] !== true;
-  if (!light) refreshComp_(comp);
+  Object.keys(heavy).forEach(function (n) { refreshComp_(comps[n]); });
   return finish_();
+}
+// The sheet row for a change: the row it was made on, if that row still holds the same fight.
+function findRow_(L, rows, it) {
+  var same = function (r) { return (!it.code || String(r[L.code - 1]).trim() === String(it.code).trim()) && (!L.bout || !it.bout || String(r[L.bout - 1]).trim() === String(it.bout).trim()); };
+  if (it.row >= 2 && rows[it.row - 2] && same(rows[it.row - 2])) return it.row;
+  if (!it.code) return 0;
+  for (var i = 0; i < rows.length; i++) if (same(rows[i])) return i + 2;
+  return 0;
 }
 
 function adminDraw(compName) {

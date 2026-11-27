@@ -38,6 +38,7 @@
   h1 small { font-weight: 600; color: var(--muted); font-size: 13px; margin-left: 6px; }
   .sync { font-size: 12px; color: var(--muted); }
   .sync.err { color: var(--bad); font-weight: 700; }
+  .sync.busy { color: var(--warn, #b45309); font-weight: 600; }
   .btn { border: 1px solid var(--line); background: var(--card); border-radius: 9px; padding: 7px 12px; font-weight: 650; }
   .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .btn.good { background: var(--good); color: #fff; border-color: var(--good); }
@@ -849,6 +850,9 @@ function setData(json) {
   render();
 }
 async function run(fn, ...args) {
+  if (fn !== 'adminLoad' && pendingCount() && !(await settle())) {
+    const m = 'Some scores are not saved yet. Wait for "All saved", then try again.'; toast(m); throw new Error(m);
+  }
   S.busy++; renderSync();
   try { const out = await call(fn, ...args); return out; }
   catch (e) { S.err = e.message; toast(e.message); throw e; }
@@ -856,13 +860,15 @@ async function run(fn, ...args) {
 }
 
 /* ---------------- Saving scores ----------------
-   Taps change the fight on screen at once. Saves go to the sheet one at a time, merged per row. */
-const queue = new Map(); let flushing = false, flushT;
+   Every tap changes the screen at once and goes into a queue kept in this browser, so it survives
+   a reload. Changes to the same fight are merged. The queue goes to the sheet in batches, one batch
+   at a time, in the order they were made. A batch that fails stays queued and is retried. Whatever
+   the sheet sends back, queued changes are laid over it, so the screen never jumps back. */
+const queue = new Map();          // 'comp|row' -> { comp, row, code, bout, patch }
+let inflight = null;              // the batch on its way to the sheet
+let flushing = false, flushT, retryT, fails = 0, lastErr = '', savedAt = 0;
 function rawRow(c, row) { return c.raw.fights.find(f => f.row === row); }
-function patchRow(row, patch) {
-  const c = compDef();
-  const f = rawRow(c, row);
-  if (!f) return;
+function applyPatch(c, f, patch) {
   if (patch.rm) f.rm = patch.rm.slice();
   if (patch.wm) f.wm = patch.wm.slice();
   if ('done' in patch) f.done = patch.done;
@@ -874,22 +880,67 @@ function patchRow(row, patch) {
   f.decision = rF && wF ? 'Both forfeit' : rF ? 'White wins by forfeit' : wF ? 'Red wins by forfeit' : h === 'Red' ? 'Red wins by hantei' : h === 'White' ? 'White wins by hantei' : '';
   if (rF || wF) f.done = true;
   c._st = null;
-  const key = c.name + '|' + row;
-  queue.set(key, Object.assign(queue.get(key) || { comp: c.name, row }, patch));
-  render();
-  clearTimeout(flushT); flushT = setTimeout(flush, 350);
+}
+const pendingCount = () => queue.size + (inflight ? inflight.size : 0);
+function persistQueue() {
+  const all = [...(inflight ? inflight.values() : []), ...queue.values()];
+  store.set('queue', all.length ? JSON.stringify(all) : '');
+}
+function enqueue(item) {
+  const key = item.comp + '|' + item.row;
+  const old = queue.get(key);
+  queue.set(key, old ? Object.assign({}, old, item, { patch: Object.assign({}, old.patch, item.patch) }) : item);
+}
+function patchRow(row, patch) {
+  const c = compDef();
+  const f = rawRow(c, row);
+  if (!f) return;
+  applyPatch(c, f, patch);
+  enqueue({ comp: c.name, row, code: f.code, bout: f.bout || '', patch });
+  persistQueue();
+  render(); renderSync();
+  clearTimeout(flushT); flushT = setTimeout(flush, 300);
 }
 async function flush() {
-  if (flushing) return; flushing = true;
+  if (flushing || !queue.size) return;
+  flushing = true; clearTimeout(flushT); clearTimeout(retryT); retryT = null;
+  inflight = new Map(queue); queue.clear();
+  renderSync();
   try {
-    while (queue.size) {
-      const [key, p] = queue.entries().next().value; queue.delete(key);
-      const { comp, row, ...patch } = p;
-      try { const out = await run('adminSave', comp, row, patch); if (!queue.size) setData(out); }
-      catch (e) { queue.clear(); await load(); }
+    const out = await call('adminSaveMany', [...inflight.values()]);
+    inflight = null; fails = 0; lastErr = ''; savedAt = Date.now();
+    persistQueue();
+    setData(out);
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    if (/no longer in/i.test(msg)) {
+      // The fight was removed (a redraw or reset): these changes can't be saved anywhere.
+      inflight = null; persistQueue(); toast(msg); fails = 0; lastErr = ''; load();
+    } else {
+      // Put the batch back in front of anything newer, which wins where they overlap.
+      const newer = new Map(queue); queue.clear();
+      for (const it of inflight.values()) enqueue(it);
+      for (const it of newer.values()) enqueue(it);
+      inflight = null; fails++; lastErr = msg; persistQueue();
+      if (fails === 1) toast('Not saved yet. Trying again…');
+      retryT = setTimeout(flush, Math.min(30000, 2000 * 2 ** (fails - 1)));
     }
-  } finally { flushing = false; }
+  } finally {
+    flushing = false; renderSync();
+    if (queue.size && !retryT) flushT = setTimeout(flush, 50);
+  }
 }
+// Waits for every queued change to reach the sheet. False if they couldn't be saved.
+async function settle() {
+  clearTimeout(flushT);
+  for (let i = 0; i < 600 && pendingCount(); i++) {
+    if (!flushing && queue.size && !fails) await flush(); else await new Promise(r => setTimeout(r, 100));
+    if (fails >= 3) break;
+  }
+  return !pendingCount();
+}
+function retryNow() { if (queue.size && !flushing) { clearTimeout(retryT); retryT = null; flush(); } }
+window.addEventListener('beforeunload', e => { if (pendingCount()) { e.preventDefault(); e.returnValue = ''; } });
 // Forfeit / hantei flags live in their own cells, so remember them when loading.
 function primeFlags(d) {
   d.comps.forEach(c => c.raw.fights.forEach(f => {
@@ -904,14 +955,34 @@ async function load() {
   catch (e) { return false; }
 }
 const _setData = setData;
-setData = function (json) { const d = typeof json === 'string' ? JSON.parse(json) : json; primeFlags(d); _setData(d); };
+setData = function (json) {
+  const d = typeof json === 'string' ? JSON.parse(json) : json;
+  primeFlags(d);
+  // Lay changes that haven't reached the sheet yet over what it sent.
+  [...(inflight ? inflight.values() : []), ...queue.values()].forEach(it => {
+    const c = d.comps.find(x => x.name === it.comp);
+    const f = c && c.raw.fights.find(x => x.row === it.row && (!it.code || x.code === it.code) && (!it.bout || x.bout === it.bout));
+    if (f) applyPatch(c, f, it.patch);
+  });
+  _setData(d);
+};
 
 /* ---------------- Render ---------------- */
 function renderSync() {
   const s = document.getElementById('sync');
   if (!s) return;
-  s.className = 'sync' + (S.err && !S.busy ? ' err' : '');
-  s.textContent = S.busy || queue.size ? 'Saving…' : S.err ? S.err : S.data ? 'Saved ' + new Date(S.data.updated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+  const n = pendingCount();
+  const t = d => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const failing = fails > 0 && n;
+  s.className = 'sync' + (failing || (S.err && !S.busy && !n) ? ' err' : '') + (n && !failing ? ' busy' : '');
+  s.title = failing ? lastErr + ' Tap to try now.' : '';
+  s.onclick = failing ? retryNow : null;
+  s.style.cursor = failing ? 'pointer' : '';
+  s.textContent = failing ? 'Not saved: ' + n + (n === 1 ? ' change' : ' changes') + ' waiting, retrying'
+    : n ? 'Saving ' + n + (n === 1 ? ' change…' : ' changes…')
+    : S.busy ? 'Working…'
+    : S.err ? S.err
+    : S.data ? 'All saved ' + t(savedAt || S.data.updated) : '';
 }
 function render() {
   if (!S.data) return;
@@ -1096,20 +1167,11 @@ function teamPanel(c, st, f) {
 }
 
 /* ----- Pools tab ----- */
-// Waits for every queued score to reach the sheet.
-async function settle() {
-  clearTimeout(flushT);
-  for (let i = 0; i < 300 && (flushing || queue.size); i++) {
-    if (!flushing) await flush(); else await new Promise(r => setTimeout(r, 100));
-  }
-}
 async function addPlayoffs(ev) {
   const btn = ev && ev.currentTarget;
   if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
   toast('Adding play-off fights…');
   try {
-    // The last score may still be on its way to the sheet: the server must see the pool finished.
-    await settle();
     const out = JSON.parse(await run('adminPlayoffs'));
     setData(out.data);
     toast(out.added ? out.added + ' play-off ' + (out.added === 1 ? 'fight' : 'fights') + ' added after the pool.' : 'No play-off added: the sheet does not show a finished pool with a deciding tie. Check every pool fight is marked complete.');
@@ -1319,10 +1381,12 @@ S.tab = store.get('tab') || 'score';
 (async () => {
   if (typeof demoServer !== 'undefined') document.getElementById('demo').classList.remove('hidden');
   store.set('code', '');
-  if (await load()) { document.getElementById('app').classList.remove('hidden'); }
+  // Changes left from last time (closed or reloaded before they reached the sheet) go first.
+  try { JSON.parse(store.get('queue') || '[]').forEach(enqueue); } catch (e) {}
+  if (await load()) { document.getElementById('app').classList.remove('hidden'); if (queue.size) { toast('Saving changes left from last time…'); flush(); } }
   else { document.getElementById('loginErr').textContent = S.err || 'Could not open the sheet.'; document.getElementById('login').classList.remove('hidden'); }
   // Pick up scores typed straight into the sheet.
-  setInterval(() => { if (!S.busy && !queue.size && S.data && !document.hidden && document.getElementById('view').dataset.dirty !== '1') load(); }, 20000);
+  setInterval(() => { if (!S.busy && !pendingCount() && S.data && !document.hidden && document.getElementById('view').dataset.dirty !== '1') load(); }, 20000);
 })();
 </script>
 </body>
