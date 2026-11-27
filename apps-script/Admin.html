@@ -746,7 +746,7 @@ function shiaiCompute(raw) {
         bouts: f.team ? f.bouts.map(function (b) {
           return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit, encho: !!(b.encho || b.hantei),
             red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
-        }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
+        }) : null,
         orders: f.team ? teamOrders_(f) : null,
       };
     }),
@@ -1148,19 +1148,18 @@ function teamPanel(c, st, f) {
   const pending = f.red.pending || f.white.pending;
   const head = rawRow(c, f.row);
   const bouts = f.bouts || [];
-  let b = bouts.find(x => x.row === S.bout) || bouts.find(x => !x.done && !x.extra) || bouts[0];
-  if (f.level && !(b && b.extra)) { const ex = c.raw.fights.find(x => x.row > f.row && x.code === head.code && SHIAI_PLAYOFF_RE.test(String(x.bout))); if (ex && S.bout == null) b = { row: ex.row, extra: true, pos: SHIAI_PLAYOFF_BOUT, red: { name: '', marks: [], ippon: 0 }, white: { name: '', marks: [], ippon: 0 } }; }
-  // The daihyosen row only shows once a match is level.
-  const exRaw = c.raw.fights.find(x => x.row > f.row && x.code === head.code && SHIAI_PLAYOFF_RE.test(String(x.bout)));
   const list = bouts.filter(x => !x.extra);
+  // The daihyosen row shows once a match is level (or once it has been started).
   const exBout = bouts.find(x => x.extra);
-  const showEx = f.level || exBout;
+  const exStarted = exBout && (exBout.done || exBout.red.marks.length || exBout.white.marks.length || exBout.red.name || exBout.white.name);
+  const showEx = !!exBout && (f.level || exStarted);
+  let b = bouts.find(x => x.row === S.bout && (!x.extra || showEx)) || (f.level && exBout && !exBout.done ? exBout : null) || list.find(x => !x.done) || list[0];
   const boutBtn = (x, label) => el('button', { class: 'bt', 'aria-current': String(b && x.row === b.row), onclick: () => { S.bout = x.row; render(); } },
     el('span', { class: 'pos' }, label || x.pos), el('span', { class: 'r' }, x.red.name || '—'),
     el('span', { class: 'sc' }, x.done || x.red.marks.length || x.white.marks.length ? x.red.ippon + '–' + x.white.ippon : x.level ? 'encho' : ''), el('span', { class: 'w' }, x.white.name || '—'),
     el('span', { class: 'pill ' + (x.done ? 'done' : x.level ? 'lvl' : '') }, x.done ? (x.result === 'draw' ? 'Draw' : 'Done') : x.level ? 'Encho' : ''));
   const boutRows = list.map(x => boutBtn(x));
-  if (showEx && exRaw) boutRows.push(boutBtn(exBout || { row: exRaw.row, pos: SHIAI_PLAYOFF_BOUT, red: { name: '', marks: [] }, white: { name: '', marks: [] } }, 'Daihyosen'));
+  if (showEx) boutRows.push(boutBtn(exBout, 'Daihyosen'));
   // Fighting orders: each team hands theirs in before the match. The board shows the bouts once both are in.
   const ord = f.orders || { red: true, white: true, both: true };
   const started = bouts.some(x => x.done || x.red.marks.length || x.white.marks.length);
@@ -1201,11 +1200,12 @@ function teamPanel(c, st, f) {
       el('div', { class: 'sides' },
         sideBox('red', '', f.red.label, bb.red.marks, bb.red.ippon, rawB, { nameSelect: memberSelect('red'), hantei: exHantei('Red') }),
         sideBox('white', '', f.white.label, bb.white.marks, bb.white.ippon, rawB, { nameSelect: memberSelect('white'), hantei: exHantei('White') })),
+      bb.extra && !(rawB.red && rawB.white) ? el('div', { class: 'alert' }, 'Pick each team\'s fighter for the daihyosen above. The board shows it once both are picked.') : null,
       statusLine(c, bb, comp, true),
       el('div', { class: 'actions' },
         rawB.done === true || rawB.done === 'TRUE'
           ? el('button', { class: 'btn', onclick: () => patchRow(b.row, { done: false, hantei: '' }) }, 'Reopen fight')
-          : el('button', { class: 'btn good', onclick: () => { if (bb.extra && levelNow(bb)) { blockDraw(c, 'the daihyosen'); return; } patchRow(b.row, { done: true }); const nx = list.find(x => x.row > b.row && !x.done); if (nx) S.bout = nx.row; } }, 'Fight complete'), bb.extra ? enchoBox(rawB, b.row) : null));
+          : el('button', { class: 'btn good', onclick: () => { if (bb.extra && levelNow(bb)) { blockDraw(c, 'the daihyosen'); return; } patchRow(b.row, { done: true }); const nx = list.find(x => x.row > b.row && !x.done); S.bout = nx ? nx.row : null; } }, 'Fight complete'), bb.extra ? enchoBox(rawB, b.row) : null));
   }
   const s = f.scores || { red: 0, white: 0 };
   return el('div', { class: 'card' },

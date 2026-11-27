@@ -573,7 +573,7 @@ function shiaiCompute(raw) {
         bouts: f.team ? f.bouts.map(function (b) {
           return { pos: b.pos, extra: b.extra, done: b.done, result: b.res, decision: b.decision, row: b.row, level: !!b.level, hantei: !!b.hantei, forfeit: !!b.forfeit, encho: !!(b.encho || b.hantei),
             red: { name: b.redTyped || '', marks: b.rm, ippon: b.rIpp }, white: { name: b.whiteTyped || '', marks: b.wm, ippon: b.wIpp } };
-        }).filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || b.red.name || b.white.name; }) : null,
+        }) : null,
         orders: f.team ? teamOrders_(f) : null,
       };
     }),
@@ -1631,6 +1631,8 @@ function boardState_() {
   comps.forEach(function (c) {
     c.fights.forEach(function (f) {
       if (f.team && f.orders && !f.orders.both) f.bouts.forEach(function (b) { b.red.name = ''; b.white.name = ''; });
+      // The daihyosen shows once both teams have picked their fighter (or it has started).
+      if (f.team) f.bouts = f.bouts.filter(function (b) { return !b.extra || b.done || b.red.marks.length || b.white.marks.length || (b.red.name && b.white.name); });
     });
   });
   return JSON.stringify({ ok: true, event: readEvent_(), updated: new Date().toISOString(), competitions: comps });
