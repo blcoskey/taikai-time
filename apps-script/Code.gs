@@ -762,7 +762,21 @@ function readEvent_() {
 }
 
 // Competitions tab: the row starting "Setting" names the competitions; rows below hold settings.
-function readComps_() {
+/* Read memo: only switched on during read-only phases (building the reply and the board), so a
+   save never sees stale rows. */
+var MEMO_ = null;
+function memo_(key, fn) {
+  if (!MEMO_) return fn();
+  if (!(key in MEMO_)) MEMO_[key] = fn();
+  return MEMO_[key];
+}
+function reading_(fn) {
+  var was = MEMO_; MEMO_ = MEMO_ || {};
+  try { return fn(); } finally { MEMO_ = was; }
+}
+
+function readComps_() { return memo_('comps', readCompsNow_); }
+function readCompsNow_() {
   var sh = sheet_(TAB.comps);
   if (!sh || sh.getLastRow() < 2) return [];
   var v = sh.getRange(1, 1, sh.getLastRow(), Math.max(2, sh.getLastColumn())).getValues();
@@ -783,7 +797,8 @@ function readComps_() {
   return comps;
 }
 
-function readEntryRows_() {
+function readEntryRows_() { return memo_('entries', readEntryRowsNow_); }
+function readEntryRowsNow_() {
   var sh = sheet_(TAB.entries);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues();
@@ -806,7 +821,8 @@ function entrants_(comp, rows) {
   return order.map(function (k) { var t = teams[k]; return { name: t.name, dojo: t.dojos.join(', '), pool: t.pool, members: t.members }; });
 }
 
-function readFightRows_(comp) {
+function readFightRows_(comp) { return memo_('rows|' + comp.name, function () { return readFightRowsNow_(comp); }); }
+function readFightRowsNow_(comp) {
   var sh = sheet_(fightsTab_(comp));
   var L = layout_(comp.settings.type);
   if (!sh || sh.getLastRow() < 2) return [];
@@ -840,7 +856,8 @@ function rowToFight_(L) {
   };
 }
 
-function readSpirit_(comp) {
+function readSpirit_(comp) { return memo_('spirit|' + comp.name, function () { return readSpiritNow_(comp); }); }
+function readSpiritNow_(comp) {
   var sh = sheet_(TAB.spirit);
   if (!sh || sh.getLastRow() < 2) return [];
   var out = [];
@@ -851,7 +868,8 @@ function readSpirit_(comp) {
   return out;
 }
 
-function readRaw_(comp, entryRows) {
+function readRaw_(comp, entryRows) { return memo_('raw|' + comp.name, function () { return readRawNow_(comp, entryRows); }); }
+function readRawNow_(comp, entryRows) {
   var L = layout_(comp.settings.type);
   return { settings: comp.settings, fighters: entrants_(comp, entryRows), fights: readFightRows_(comp).map(rowToFight_(L)), spirit: readSpirit_(comp) };
 }
@@ -882,6 +900,7 @@ function generateDraw_(idx) {
     : 'Make the ' + comp.name + ' draw for ' + entrants.length + ' ' + what + '? Any without a pool get one.';
   if (ui.alert('Generate draw: ' + comp.name, msg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
   var n = doDraw_(comp);
+  publishBoard_();
   var sh = sheet_(fightsTab_(comp));
   sh.activate();
   ui.alert('Draw ready', comp.name + ': ' + n + (L.team ? ' team matches' : ' fights') + ' on the "' + fightsTab_(comp) + '" tab.', ui.ButtonSet.OK);
@@ -921,13 +940,13 @@ function doDraw_(comp) {
   formatFights_(sh, comp);
   timingRows_();
   refreshComp_(comp);
-  publishBoard_();
   return draw.fights.length;
 }
 
 function addPlayoffs() {
   var ui = SpreadsheetApp.getUi();
   var added = doPlayoffs_();
+  publishBoard_();
   if (!added) { ui.alert('No play-offs needed right now. A play-off is only added once a pool is finished and a tie decides a place.'); return; }
   ui.alert(added + (added === 1 ? ' play-off match added.' : ' play-off matches added.') + ' The winner takes the higher place.');
 }
@@ -969,7 +988,6 @@ function doPlayoffs_() {
     });
     if (added) { formatFights_(sh, comp); rotateShinpan_(comp); refreshComp_(comp); }
   });
-  publishBoard_();
   return added;
 }
 
@@ -978,7 +996,8 @@ function doPlayoffs_() {
    steps out and the next on the list steps in. The rotation carries on from one competition to the next
    in the order of the Competitions tab. Names can be changed by hand on any match; they are only
    rewritten by Generate draw or by Shiai > Redo shinpan rotation from the next fight. */
-function readShinpan_() {
+function readShinpan_() { return memo_('shinpan', readShinpanNow_); }
+function readShinpanNow_() {
   var sh = sheet_(TAB.shinpan);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function (r) { return shiaiClean(r[0]); }).filter(Boolean);
@@ -998,8 +1017,8 @@ function shinpanStart_(comp) {
   return start;
 }
 // Fills the shinpan cells of match rows from match number `from` (0-based) on. Multiple courts split the list.
-function rotateShinpanRows_(comp, L, rows, from, start) {
-  var names = readShinpan_();
+function rotateShinpanRows_(comp, L, rows, from, start, names) {
+  names = names || readShinpan_();
   if (!names.length) return;
   var courts = Math.max(1, comp.settings.courts);
   var perCourt = {}, idx = 0;
@@ -1027,11 +1046,33 @@ function rotateShinpan_(comp) {
   sh.getRange(2, L.shinpan, rows.length, 3).setValues(rows.map(function (r) { return r.slice(L.shinpan - 1, L.shinpan + 2); }));
   return heads.length - from;
 }
+// Redo the rotation for every competition in one pass: one read and one write per Fights tab.
+function rotateAll_() {
+  var names = readShinpan_();
+  if (!names.length) return 0;
+  var entryRows = readEntryRows_();
+  var start = 0, left = 0;
+  readComps_().forEach(function (comp) {
+    var L = layout_(comp.settings.type);
+    var sh = sheet_(fightsTab_(comp));
+    var rows = sh ? readFightRowsNow_(comp) : [];
+    var heads = rows.filter(function (r) { return isHead_(L, r) && String(r[L.code - 1]).trim(); }).length;
+    if (rows.length) {
+      var state = shiaiCompute({ settings: comp.settings, fighters: entrants_(comp, entryRows), fights: rows.map(rowToFight_(L)), spirit: [] });
+      var from = 0;
+      while (from < state.fights.length && state.fights[from].done) from++;
+      rotateShinpanRows_(comp, L, rows, from, start, names);
+      sh.getRange(2, L.shinpan, rows.length, 3).setValues(rows.map(function (r) { return r.slice(L.shinpan - 1, L.shinpan + 2); }));
+      left += heads - from;
+    }
+    start += Math.ceil(heads / SHIAI_MATCHES_PER_ROTATION);
+  });
+  return left;
+}
 function rotateShinpanMenu() {
   var names = readShinpan_();
   if (names.length < 3) { SpreadsheetApp.getUi().alert('Put at least three shinpan on the Shinpan tab, in the order they rotate.'); return; }
-  var n = 0;
-  readComps_().forEach(function (c) { n += rotateShinpan_(c); });
+  var n = rotateAll_();
   publishBoard_();
   SpreadsheetApp.getActive().toast('Shinpan filled in for ' + n + ' matches still to fight.');
 }
@@ -1039,25 +1080,33 @@ function rotateShinpanMenu() {
 // The pool tables beside the fights, so the table can see who is through and when a play-off is needed.
 function writePoolPanel_(sh, L, state) {
   var panel = shiaiPoolPanel(state);
+  var cache = CacheService.getScriptCache();
+  var key = 'panel|' + sh.getSheetId() + '|' + L.panel;
+  var sig = JSON.stringify(panel);
+  if (sig.length < 90000 && cache.get(key) === sig) return;
   var maxRows = sh.getMaxRows();
   var need = panel.rows.length + 1;
   if (maxRows < need) { sh.insertRowsAfter(maxRows, need - maxRows); maxRows = need; }
   if (sh.getMaxColumns() < L.panel + 8) sh.insertColumnsAfter(sh.getMaxColumns(), L.panel + 8 - sh.getMaxColumns());
-  var area = sh.getRange(1, L.panel, maxRows, 9);
-  area.clearContent().clearFormat().clearDataValidations();
-  sh.getRange(1, L.panel, 1, 9).setValues([['POOLS (fills in by itself)', '', '', '', '', '', '', '', '']]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff');
-  if (!panel.rows.length) return;
-  sh.getRange(2, L.panel, panel.rows.length, 9).setValues(panel.rows).setVerticalAlignment('middle');
-  var colours = { title: '#dde3ef', 'done-title': '#e2f1e8', 'alert-title': '#fde2c4', head: '#f4f5f8', tied: '#fff1d6', through: '#e9f6ee', alert: '#fde2c4' };
-  panel.styles.forEach(function (st, i) {
-    var r = sh.getRange(i + 2, L.panel, 1, 9);
-    if (colours[st]) r.setBackground(colours[st]);
-    if (st === 'title' || st === 'done-title' || st === 'alert-title' || st === 'head' || st === 'alert') r.setFontWeight('bold');
-    if (st === 'alert' || st === 'alert-title') r.setFontColor('#9a3412');
-    if (st === 'note') r.setFontColor('#555555');
-  });
-  sh.setColumnWidth(L.panel - 1, 24);
-  [50, 190, 55, 50, 55, 45, 50, 55, 110].forEach(function (w, i) { sh.setColumnWidth(L.panel + i, w); });
+  var first = !cache.get(key);
+  if (first) {
+    sh.getRange(1, L.panel, maxRows, 9).clearContent().clearFormat().clearDataValidations();
+    sh.getRange(1, L.panel, 1, 9).setValues([['POOLS (fills in by itself)', '', '', '', '', '', '', '', '']]).setFontWeight('bold').setBackground('#1f2a44').setFontColor('#ffffff');
+    sh.setColumnWidth(L.panel - 1, 24);
+    [50, 190, 55, 50, 55, 45, 50, 55, 110].forEach(function (w, i) { sh.setColumnWidth(L.panel + i, w); });
+  } else if (maxRows > need) {
+    sh.getRange(need + 1, L.panel, maxRows - need, 9).clearContent().clearFormat();
+  }
+  if (panel.rows.length) {
+    var colours = { title: '#dde3ef', 'done-title': '#e2f1e8', 'alert-title': '#fde2c4', head: '#f4f5f8', tied: '#fff1d6', through: '#e9f6ee', alert: '#fde2c4' };
+    var bold = { title: 1, 'done-title': 1, 'alert-title': 1, head: 1, alert: 1 };
+    var nine = function (v) { return [v, v, v, v, v, v, v, v, v]; };
+    var bg = panel.styles.map(function (st) { return nine(colours[st] || null); });
+    var fw = panel.styles.map(function (st) { return nine(bold[st] ? 'bold' : 'normal'); });
+    var fc = panel.styles.map(function (st) { return nine(st === 'alert' || st === 'alert-title' ? '#9a3412' : st === 'note' ? '#555555' : '#000000'); });
+    sh.getRange(2, L.panel, panel.rows.length, 9).setValues(panel.rows).setBackgrounds(bg).setFontWeights(fw).setFontColors(fc).setVerticalAlignment('middle');
+  }
+  try { cache.put(key, sig, 21600); } catch (e) { /* too big to remember: it just rewrites next time */ }
 }
 
 // Recalculate one competition and write back: match numbers, knockout names, team results, Standings.
@@ -1107,16 +1156,17 @@ function refreshComp_(comp) {
           }
         }
       });
-      sh.getRange(2, L.order, rows.length, 1).setValues(nums);
-      sh.getRange(2, L.red, rows.length, 1).setValues(red);
-      sh.getRange(2, L.white, rows.length, 1).setValues(white);
+      var same = function (col, vals) { return rows.every(function (r, i) { return String(r[col - 1]) === String(vals[i][0]); }); };
+      if (!same(L.order, nums)) sh.getRange(2, L.order, rows.length, 1).setValues(nums);
+      if (!same(L.red, red)) sh.getRange(2, L.red, rows.length, 1).setValues(red);
+      if (!same(L.white, white)) sh.getRange(2, L.white, rows.length, 1).setValues(white);
       if (L.team) {
         // Only touch the Team rows, so the bout formulas stay in place.
         rows.forEach(function (r, i) {
           if (teamCols.winner[i][0] === null) return;
-          sh.getRange(i + 2, L.done).setValue(teamCols.done[i][0]);
-          sh.getRange(i + 2, L.rIpp, 1, 2).setValues([[teamCols.rIpp[i][0], teamCols.wIpp[i][0]]]);
-          sh.getRange(i + 2, L.winner).setValue(teamCols.winner[i][0]);
+          if (r[L.done - 1] !== teamCols.done[i][0]) sh.getRange(i + 2, L.done).setValue(teamCols.done[i][0]);
+          if (String(r[L.rIpp - 1]) !== String(teamCols.rIpp[i][0]) || String(r[L.wIpp - 1]) !== String(teamCols.wIpp[i][0])) sh.getRange(i + 2, L.rIpp, 1, 2).setValues([[teamCols.rIpp[i][0], teamCols.wIpp[i][0]]]);
+          if (String(r[L.winner - 1]) !== String(teamCols.winner[i][0])) sh.getRange(i + 2, L.winner).setValue(teamCols.winner[i][0]);
         });
       }
     }
@@ -1135,6 +1185,10 @@ function writeStandings_(comp, state) {
       out.push([p.pool, r.place, r.name, (r.members && r.members.length ? r.members.join(', ') : r.dojo), r.fought, r.w, r.d, r.l, r.ipp, r.points, note]);
     });
   });
+  var cache = CacheService.getScriptCache(), key = 'stand|' + sh.getSheetId();
+  var sig = JSON.stringify([out, state.results || null]);
+  if (sig.length < 90000 && cache.get(key) === sig) return;
+  try { cache.put(key, sig, 21600); } catch (e) {}
   if (sh.getMaxRows() > 1) sh.getRange(2, 1, sh.getMaxRows() - 1, 11).clearContent();
   if (out.length) {
     if (sh.getMaxRows() < out.length + 1) sh.insertRowsAfter(sh.getMaxRows(), out.length + 1 - sh.getMaxRows());
@@ -1281,7 +1335,7 @@ function adminData_() {
   });
 }
 
-function adminLoad() { return adminData_(); }
+function adminLoad() { return reading_(adminData_); }
 
 // patch: { rm:[], wm:[], rF, wF, done, hantei:'Red'|'White'|'', shinpan:[3], red, white }
 function adminSave(compName, row, patch) {
@@ -1302,28 +1356,61 @@ function adminSave(compName, row, patch) {
     if (patch.shinpan) for (var k = 0; k < 3; k++) set(L.shinpan + k, patch.shinpan[k] || '');
     if (L.team && 'red' in patch) set(L.red, patch.red || '');
     if (L.team && 'white' in patch) set(L.white, patch.white || '');
-    // Write only the typed cells, so the formulas in the row stay.
-    var cols = [[L.red, 1], [L.rm, L.nm], [L.rF, 1], [L.wm, L.nm], [L.wF, 1], [L.white, 1], [L.done, 1], [L.shinpan, 3], [L.hantei, 1]];
-    cols.forEach(function (c) { sh.getRange(row, c[0], 1, c[1]).setValues([r.slice(c[0] - 1, c[0] - 1 + c[1])]); });
+    // Write only the typed cells, so the formulas in the row stay. Red to Fight complete has no formulas.
+    var keys = Object.keys(patch);
+    var scoring = keys.some(function (k) { return k !== 'shinpan' && k !== 'hantei'; });
+    if (scoring) sh.getRange(row, L.red, 1, L.done - L.red + 1).setValues([r.slice(L.red - 1, L.done)]);
+    if (patch.shinpan) sh.getRange(row, L.shinpan, 1, 3).setValues([r.slice(L.shinpan - 1, L.shinpan + 2)]);
+    if ('hantei' in patch) sh.getRange(row, L.hantei).setValue(r[L.hantei - 1]);
   } finally { lock.releaseLock(); }
-  refreshComp_(comp);
-  publishBoard_();
-  return adminData_();
+  // Shinpan names, and marks on an individual fight that isn't finished, don't change standings or the draw.
+  var light = keys.every(function (k) { return k === 'shinpan' || ((k === 'rm' || k === 'wm') && !L.team); }) && r[L.done - 1] !== true;
+  if (!light) refreshComp_(comp);
+  return finish_();
 }
 
 function adminDraw(compName) {
   doDraw_(compByName_(compName));
-  return adminData_();
+  return finish_();
 }
 function adminPlayoffs() {
   var n = doPlayoffs_();
-  publishBoard_();
-  return JSON.stringify({ added: n, data: JSON.parse(adminData_()) });
+  return JSON.stringify({ added: n, data: JSON.parse(finish_()) });
 }
 function adminRotate() {
-  readComps_().forEach(function (c) { rotateShinpan_(c); });
-  publishBoard_();
-  return adminData_();
+  var lock = LockService.getDocumentLock(); lock.waitLock(10000);
+  try { rotateAll_(); } finally { lock.releaseLock(); }
+  return finish_();
+}
+// Clears every score in one competition: marks, forfeits, hantei and Fight complete. Play-off fights
+// are removed and the shinpan rotation is redone. The draw, names and entries stay.
+function adminResetComp(compName) {
+  var comp = compByName_(compName);
+  var L = layout_(comp.settings.type);
+  var sh = sheet_(fightsTab_(comp));
+  if (!sh) throw new Error('No fights for ' + compName + ' yet.');
+  var lock = LockService.getDocumentLock(); lock.waitLock(10000);
+  try {
+    var rows = readFightRowsNow_(comp);
+    // Remove play-off fights (for teams, the whole match), bottom up so row numbers hold.
+    var po = rows.map(function (r) { return /-PO\d+$/i.test(String(r[L.code - 1]).trim()); });
+    for (var i = rows.length - 1; i >= 0; i--) if (po[i]) sh.deleteRow(i + 2);
+    rows = rows.filter(function (_, i) { return !po[i]; });
+    if (rows.length) {
+      var block = rows.map(function (r) {
+        var out = r.slice(L.red - 1, L.done);
+        for (var k = 0; k < L.nm; k++) { out[L.rm - L.red + k] = ''; out[L.wm - L.red + k] = ''; }
+        out[L.rF - L.red] = false; out[L.wF - L.red] = false; out[L.done - L.red] = false;
+        return out;
+      });
+      sh.getRange(2, L.red, rows.length, block[0].length).setValues(block);
+      sh.getRange(2, L.hantei, rows.length, 1).setValues(rows.map(function () { return ['']; }));
+    }
+    CacheService.getScriptCache().removeAll(['panel|' + sh.getSheetId() + '|' + L.panel]);
+    rotateAll_();
+  } finally { lock.releaseLock(); }
+  refreshComp_(comp);
+  return finish_();
 }
 // rows: [[Competition, Name, Dojo, Grade, Pool, Team, Age]]
 function adminSaveEntries(rows) {
@@ -1338,8 +1425,7 @@ function adminSaveEntries(rows) {
     }
   } finally { lock.releaseLock(); }
   readComps_().forEach(refreshComp_);
-  publishBoard_();
-  return adminData_();
+  return finish_();
 }
 function adminSaveShinpan(names) {
   var sh = sheet_(TAB.shinpan);
@@ -1349,7 +1435,7 @@ function adminSaveShinpan(names) {
     if (sh.getMaxRows() < list.length + 1) sh.insertRowsAfter(sh.getMaxRows(), list.length + 1 - sh.getMaxRows());
     sh.getRange(2, 1, list.length, 1).setValues(list.map(function (n) { return [n]; }));
   }
-  return adminData_();
+  return reading_(adminData_);
 }
 // votes: [[shinpan, vote1, vote2]] for one competition
 function adminSaveSpirit(compName, votes) {
@@ -1363,8 +1449,7 @@ function adminSaveSpirit(compName, votes) {
     if (sh.getMaxRows() < out.length + 1) sh.insertRowsAfter(sh.getMaxRows(), out.length + 1 - sh.getMaxRows());
     sh.getRange(2, 1, out.length, 4).setValues(out);
   }
-  publishBoard_();
-  return adminData_();
+  return finish_();
 }
 // values: { 'Setting label': value } for one competition column
 function adminSaveSettings(compName, values) {
@@ -1379,8 +1464,7 @@ function adminSaveSettings(compName, values) {
   });
   timingRows_();
   readComps_().forEach(refreshComp_);
-  publishBoard_();
-  return adminData_();
+  return finish_();
 }
 
 /* ===================== PUBLIC BOARD =====================
@@ -1393,6 +1477,10 @@ function boardState_() {
   var entryRows = readEntryRows_();
   var comps = readComps_().map(function (c) { return Object.assign(shiaiCompute(readRaw_(c, entryRows)), { name: c.name }); });
   return JSON.stringify({ ok: true, event: readEvent_(), updated: new Date().toISOString(), competitions: comps });
+}
+// After a change: write the board and build the admin reply from a single read of the sheet.
+function finish_() {
+  return reading_(function () { publishBoard_(); return adminData_(); });
 }
 function publishBoard_() {
   try {

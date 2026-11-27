@@ -1166,6 +1166,30 @@ const EDITABLE = [
   ['Hantei after encho', 'yesno', 'Knockout and play-off fights.'],
   ['Show fighting spirit on web app', 'yesno', 'Shows the winner on the board.'],
 ];
+// Reset a competition: two steps, and the second needs the competition's name typed in.
+function renderReset() {
+  const name = S.comp;
+  const box = el('div', { class: 'card', style: 'margin-top:12px' });
+  const step1 = () => box.replaceChildren(
+    el('div', { class: 'row' }, el('span', { class: 'note', style: 'flex:1' }, 'Start ' + name + ' again with no scores.'),
+      el('button', { class: 'btn danger', onclick: () => { dirty(); step2(); } }, 'Reset ' + name + '…')));
+  const step2 = () => {
+    const input = el('input', { type: 'text', placeholder: 'Type ' + name, 'aria-label': 'Type ' + name + ' to confirm', autocomplete: 'off', style: 'padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:inherit;font:inherit;min-width:0;flex:1' });
+    const go = el('button', { class: 'btn danger', disabled: true, onclick: async () => {
+      go.disabled = true;
+      try { const r = await run('adminResetComp', name); document.getElementById('view').dataset.dirty = ''; setData(r); toast(name + ' reset. Every fight is back to unscored.'); }
+      catch (e) { go.disabled = false; }
+    } }, 'Reset ' + name);
+    input.addEventListener('input', () => { go.disabled = input.value.trim().toLowerCase() !== name.toLowerCase(); });
+    box.replaceChildren(
+      el('p', { class: 'alert bad' }, 'This clears every score in ' + name + ': marks, forfeits, hantei and finished fights. Play-off fights are removed and the shinpan rotation is redone. The draw and entries stay. This cannot be undone.'),
+      el('div', { class: 'row', style: 'margin-top:10px' }, input, go,
+        el('button', { class: 'btn', onclick: () => { document.getElementById('view').dataset.dirty = ''; step1(); } }, 'Cancel')));
+    input.focus();
+  };
+  step1();
+  return box;
+}
 function renderSettings() {
   const c = compDef();
   const team = c.settings.type === 'team';
@@ -1184,6 +1208,7 @@ function renderSettings() {
       el('div', { class: 'row', style: 'margin-top:12px' },
         el('button', { class: 'btn primary', onclick: async () => { try { const r = await run('adminSaveSettings', S.comp, vals); document.getElementById('view').dataset.dirty = ''; setData(r); toast('Settings saved. Redo the draw if you changed pools or team size.'); } catch (e) {} } }, 'Save settings'))),
     el('p', { class: 'note' }, 'Points (3 win, 2 draw, 1 per ippon) and the rest live on the Competitions tab of the sheet.'),
+    renderReset(),
     typeof demoServer !== 'undefined' ? el('div', { class: 'card row', style: 'margin-top:12px' }, el('span', { class: 'note', style: 'flex:1' }, 'Demo only: start again from the fresh draw.'), el('button', { class: 'btn danger', onclick: async () => { demoServer.reset(); await load(); toast('Demo reset.'); } }, 'Reset demo')) : null);
 }
 
